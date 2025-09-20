@@ -3,15 +3,13 @@ project(eitanos C ASM_NASM)
 
 enable_language(ASM_NASM)
 
-# Collect all C and ASM files under src/
 file(GLOB SRC_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.c" "${CMAKE_SOURCE_DIR}/src/*.S")
 
-# Object files list
 set(OBJ_FILES "")
 
 foreach(SRC ${SRC_FILES})
-    get_filename_component(NAME ${SRC} NAME_WE)  # NAME_WE = name without extension
-    set(OBJ "${CMAKE_BINARY_DIR}/${NAME}.o")      # output file named e.g. kernel.o, start.o
+    get_filename_component(NAME ${SRC} NAME_WE)
+    set(OBJ "${CMAKE_BINARY_DIR}/${NAME}.o")
 
     if(${SRC} MATCHES ".+\\.S$")
         add_custom_command(
@@ -32,5 +30,11 @@ foreach(SRC ${SRC_FILES})
     list(APPEND OBJ_FILES ${OBJ})
 endforeach()
 
-# Target to build all object files
 add_custom_target(objs ALL DEPENDS ${OBJ_FILES})
+
+# 👇 This is the magic line: add a "fake" target for CLion's code model
+add_executable(fake_target ${SRC_FILES})
+
+# Pass the same compiler flags so CLion knows how to parse code
+target_compile_options(fake_target PRIVATE -m32 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib)
+set_target_properties(fake_target PROPERTIES EXCLUDE_FROM_ALL TRUE) # don't build it by default
