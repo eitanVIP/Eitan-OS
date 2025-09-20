@@ -1,32 +1,29 @@
 #!/bin/bash
 set -e
 
-# Files
-KERNEL_C="src/kernel.c"
-START_ASM="src/start.S"
+# Paths
+BUILD_DIR="build"
+SRC_DIR="src"
 LINKER_SCRIPT="linker.ld"
-KERNEL_ELF="build/kernel.elf"
+KERNEL_ELF="$BUILD_DIR/kernel.elf"
 
-# Clean and create another build folder
-rm -rf build
-mkdir -p build
+# Clean and recreate build dir
+rm -rf $BUILD_DIR
+mkdir -p $BUILD_DIR
 
-# Assemble the startup assembly
-echo "[*] Assembling start.S..."
-nasm -f elf32 $START_ASM -o build/start.o
+# Run CMake to compile all .c/.S in src/ into .o files
+echo "[*] Running CMake build..."
+cmake -S . -B $BUILD_DIR
+cmake --build $BUILD_DIR
 
-# Compile kernel C code in freestanding mode
-echo "[*] Compiling kernel.c..."
-gcc -m32 -fno-stack-protector -fno-builtin -ffreestanding -nostdlib -c $KERNEL_C -o build/kernel.o
-
-# Link the kernel into a single ELF file
+# Link everything from build/*.o
 echo "[*] Linking kernel..."
-ld -n -m elf_i386 -o $KERNEL_ELF -T $LINKER_SCRIPT build/start.o build/kernel.o
+ld -n -m elf_i386 -T $LINKER_SCRIPT -o $KERNEL_ELF $BUILD_DIR/*.o
 
 # Create ISO folder for GRUB
-mkdir -p build/iso/boot/grub
-cp $KERNEL_ELF build/iso/boot/kernel.elf
-cat > build/iso/boot/grub/grub.cfg <<EOF
+mkdir -p $BUILD_DIR/iso/boot/grub
+cp $KERNEL_ELF $BUILD_DIR/iso/boot/kernel.elf
+cat > $BUILD_DIR/iso/boot/grub/grub.cfg <<EOF
 set timeout=0
 menuentry "eitanos" {
     multiboot /boot/kernel.elf
@@ -36,9 +33,8 @@ EOF
 
 # Make ISO with GRUB
 echo "[*] Creating ISO..."
-grub-mkrescue -o build/eitanos.iso build/iso
+grub-mkrescue -o $BUILD_DIR/eitanos.iso $BUILD_DIR/iso
 
 # Launch in QEMU
 echo "[*] Launching QEMU..."
-#qemu-system-x86_64 -cdrom build/eitanos.iso -m 512 -serial stdio -boot d
-qemu-system-i386 build/eitanos.iso
+qemu-system-i386 $BUILD_DIR/eitanos.iso -m 512 -serial stdio
