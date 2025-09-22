@@ -3,6 +3,8 @@
 //
 
 #include "memory.h"
+#include "eitan_lib.h"
+#include "screen.h"
 
 #define HEAP_START 0x200000
 #define HEAP_END   0x400000
@@ -80,4 +82,17 @@ void free(void* ptr) {
         prev->size += blk->size;
         prev->next = blk->next;
     }
+}
+
+void memory_print_blocks() {
+    block_t* curr = free_list;
+    screen_print("Memory Blocks:\n", 15);
+    while (curr) {
+        char* size_str = num_to_str(curr->size);
+        screen_print(size_str, strlen(size_str));
+        screen_print("\n", 1);
+        free(size_str);
+        curr = curr->next;
+    }
+    screen_print("Memory Blocks End\n", 18);
 }
