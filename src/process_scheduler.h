@@ -39,6 +39,5 @@ typedef struct process {
     unsigned int pending_signals;
 } process_t;
 
-void pit_init(unsigned int hz);
-void pic_remap(int offset1, int offset2);
-void schedule();
+void process_scheduler_init();
+void send_eoi(unsigned int irq_number);
