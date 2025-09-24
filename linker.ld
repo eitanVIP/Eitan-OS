@@ -5,6 +5,7 @@ SECTIONS
 {
     . = 0x100000; /* load kernel at 1 MB */
     .text : { *(.text) }
-    .data : { *(.data) }
+    .rodata : { *(.rodata*) }
+    .data : { *(.data*) }
     .bss : { *(.bss) }
 }

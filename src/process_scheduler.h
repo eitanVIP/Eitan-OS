@@ -38,6 +38,3 @@ typedef struct process {
     cpu_state_t regs;
     unsigned int pending_signals;
 } process_t;
-
-void process_scheduler_init();
-void send_eoi(unsigned int irq_number);
