@@ -5,11 +5,11 @@
 #pragma once
 
 typedef struct cpu_state {
-    // segments pushed by the stub
-    unsigned int gs;
-    unsigned int fs;
-    unsigned int es;
-    unsigned int ds;
+    // // segments pushed by the stub
+    // unsigned int gs;
+    // unsigned int fs;
+    // unsigned int es;
+    // unsigned int ds;
 
     // general purpose registers pushed by pushad (saved in this order)
     unsigned int edi;
@@ -21,20 +21,24 @@ typedef struct cpu_state {
     unsigned int ecx;
     unsigned int eax;
 
-    // interrupt number and error code could be pushed here if you choose
-    unsigned int int_no;
-    unsigned int err_code;
-
-    // values pushed by the CPU when the interrupt occurred
-    unsigned int eip;
-    unsigned int cs;
-    unsigned int eflags;
-    unsigned int useresp; // present only if privilege level change occurred
-    unsigned int ss;      // present only if privilege level change occurred
+    // // interrupt number and error code could be pushed here if you choose
+    // unsigned int int_no;
+    // unsigned int err_code;
+    //
+    // // values pushed by the CPU when the interrupt occurred
+    // unsigned int eip;
+    // unsigned int cs;
+    // unsigned int eflags;
+    // unsigned int useresp; // present only if privilege level change occurred
+    // unsigned int ss;      // present only if privilege level change occurred
 } cpu_state_t;
 
 typedef struct process {
     unsigned int pid;
     cpu_state_t regs;
     unsigned int pending_signals;
+    unsigned int stack_start;
+    unsigned int eip;
 } process_t;
+
+void process_scheduler_next_process(unsigned int* current_regs);

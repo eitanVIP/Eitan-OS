@@ -6,6 +6,7 @@
 #include "io.h"
 #include "screen.h"
 #include "eitan_lib.h"
+#include "process_scheduler.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
@@ -18,14 +19,7 @@
 #define PIC_EOI      0x20
 
 void exception_handler_c(unsigned int int_no);
-void irq_handler_c(unsigned int int_no);
-
-struct GDTR {
-    unsigned short limit;
-    unsigned int base;
-} __attribute__((packed));
-extern void setGdt(struct GDTR* gdt);
-extern void reloadSegments();
+void irq_handler_c(unsigned int int_no, unsigned int* regs);
 
 extern void isr0();  extern void isr1();  extern void isr2();  extern void isr3();
 extern void isr4();  extern void isr5();  extern void isr6();  extern void isr7();
@@ -43,7 +37,7 @@ extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15
 
 typedef struct {
     unsigned short    isr_low;      // The lower 16 bits of the ISR's address
-    unsigned short    kernel_cs;    // The GDT segment selector that the CPU will load into CS before calling the ISR
+    unsigned short    kernel_cs;    // Offset to index in GDT
     unsigned char     reserved;     // Set to zero
     unsigned char     attributes;   // Type and attributes; see the IDT page
     unsigned short    isr_high;     // The higher 16 bits of the ISR's address
@@ -54,24 +48,14 @@ struct idt_ptr {
     unsigned int base;
 } __attribute__((packed));
 
-struct GDT {
-    unsigned int base;        // 32-bit base
-    unsigned int limit;       // 20-bit limit (stored in 32-bit int)
-    unsigned char access_byte;  // Access byte
-    unsigned char flags;        // Only 4 bits used, but stored in 8-bit int
-};
-
-unsigned char gdt[5 * 8];
-
 __attribute__((aligned(0x10)))
-static idt_entry_t idt[256]; // Create an array of IDT entries; aligned for performance
-struct idt_ptr idtp;
+static idt_entry_t idt[256];
 
 void idt_set_descriptor(unsigned char vector, void* isr, unsigned char flags) {
     idt_entry_t* descriptor = &idt[vector];
 
     descriptor->isr_low        = (unsigned int)isr & 0xFFFF;
-    descriptor->kernel_cs      = 0x08; // this value can be whatever offset your kernel code selector is in your GDT
+    descriptor->kernel_cs      = 0x08; // Offset to index in GDT, kernel code entry
     descriptor->attributes     = flags;
     descriptor->isr_high       = (unsigned int)isr >> 16;
     descriptor->reserved       = 0;
@@ -82,102 +66,64 @@ static inline void lidt(void* base, unsigned short size) {
     asm volatile("lidt %0" : : "m"(IDTR));
 }
 
-void encode_gdt_entry(unsigned char *target, struct GDT source)
-{
-    // Check the limit to make sure that it can be encoded
-    if (source.limit > 0xFFFFF) {
-        screen_print("GDT cannot encode limits larger than 0xFFFFF\n", 45);
-        return;
-    }
-
-    // Encode the limit
-    target[0] = source.limit & 0xFF;
-    target[1] = (source.limit >> 8) & 0xFF;
-    target[6] = (source.limit >> 16) & 0x0F;
-
-    // Encode the base
-    target[2] = source.base & 0xFF;
-    target[3] = (source.base >> 8) & 0xFF;
-    target[4] = (source.base >> 16) & 0xFF;
-    target[7] = (source.base >> 24) & 0xFF;
-
-    // Encode the access byte
-    target[5] = source.access_byte;
-
-    // Encode the flags
-    target[6] |= (source.flags << 4);
-}
-
 void interrupts_init() {
-    // GDT
-    encode_gdt_entry(gdt, (struct GDT){ 0, 0, 0, 0 });
-    encode_gdt_entry(gdt + 0x0008, (struct GDT){ 0, 0xFFFFF, 0x9A, 0xC });
-    encode_gdt_entry(gdt + 0x0010, (struct GDT){ 0, 0xFFFFF, 0x92, 0xC });
-    encode_gdt_entry(gdt + 0x0018, (struct GDT){ 0, 0xFFFFF, 0xFA, 0xC });
-    encode_gdt_entry(gdt + 0x0020, (struct GDT){ 0, 0xFFFFF, 0xF2, 0xC });
-    struct GDTR gdtr;
-    gdtr.limit = 5 * 8 - 1;
-    gdtr.base = (unsigned int) gdt;
-    setGdt(&gdtr);
-    reloadSegments();
-
     // IDT
     for (int i = 0; i < 256; ++i) {
         idt_set_descriptor((unsigned char)i, isr0, 0x8E);
     }
 
-    // /* Exceptions 0..31 */
-    // idt_set_gate(0,  isr0,  0x08, 0x8E);
-    // idt_set_gate(1,  isr1,  0x08, 0x8E);
-    // idt_set_gate(2,  isr2,  0x08, 0x8E);
-    // idt_set_gate(3,  isr3,  0x08, 0x8E);
-    // idt_set_gate(4,  isr4,  0x08, 0x8E);
-    // idt_set_gate(5,  isr5,  0x08, 0x8E);
-    // idt_set_gate(6,  isr6,  0x08, 0x8E);
-    // idt_set_gate(7,  isr7,  0x08, 0x8E);
-    // idt_set_gate(8,  isr8,  0x08, 0x8E);
-    // idt_set_gate(9,  isr9,  0x08, 0x8E);
-    // idt_set_gate(10, isr10, 0x08, 0x8E);
-    // idt_set_gate(11, isr11, 0x08, 0x8E);
-    // idt_set_gate(12, isr12, 0x08, 0x8E);
-    // idt_set_gate(13, isr13, 0x08, 0x8E);
-    // idt_set_gate(14, isr14, 0x08, 0x8E);
-    // idt_set_gate(15, isr15, 0x08, 0x8E);
-    // idt_set_gate(16, isr16, 0x08, 0x8E);
-    // idt_set_gate(17, isr17, 0x08, 0x8E);
-    // idt_set_gate(18, isr18, 0x08, 0x8E);
-    // idt_set_gate(19, isr19, 0x08, 0x8E);
-    // idt_set_gate(20, isr20, 0x08, 0x8E);
-    // idt_set_gate(21, isr21, 0x08, 0x8E);
-    // idt_set_gate(22, isr22, 0x08, 0x8E);
-    // idt_set_gate(23, isr23, 0x08, 0x8E);
-    // idt_set_gate(24, isr24, 0x08, 0x8E);
-    // idt_set_gate(25, isr25, 0x08, 0x8E);
-    // idt_set_gate(26, isr26, 0x08, 0x8E);
-    // idt_set_gate(27, isr27, 0x08, 0x8E);
-    // idt_set_gate(28, isr28, 0x08, 0x8E);
-    // idt_set_gate(29, isr29, 0x08, 0x8E);
-    // idt_set_gate(30, isr30, 0x08, 0x8E);
-    // idt_set_gate(31, isr31, 0x08, 0x8E);
-    //
-    // /* IRQs 32..47 (irq0..irq15) */
-    // idt_set_gate(32, irq0,  0x08, 0x8E);
-    // idt_set_gate(33, irq1,  0x08, 0x8E);
-    // idt_set_gate(34, irq2,  0x08, 0x8E);
-    // idt_set_gate(35, irq3,  0x08, 0x8E);
-    // idt_set_gate(36, irq4,  0x08, 0x8E);
-    // idt_set_gate(37, irq5,  0x08, 0x8E);
-    // idt_set_gate(38, irq6,  0x08, 0x8E);
-    // idt_set_gate(39, irq7,  0x08, 0x8E);
-    //
-    // idt_set_gate(40, irq8,  0x08, 0x8E);
-    // idt_set_gate(41, irq9,  0x08, 0x8E);
-    // idt_set_gate(42, irq10, 0x08, 0x8E);
-    // idt_set_gate(43, irq11, 0x08, 0x8E);
-    // idt_set_gate(44, irq12, 0x08, 0x8E);
-    // idt_set_gate(45, irq13, 0x08, 0x8E);
-    // idt_set_gate(46, irq14, 0x08, 0x8E);
-    // idt_set_gate(47, irq15, 0x08, 0x8E);
+    /* Exceptions 0..31 */
+    idt_set_descriptor(0,  isr0,  0x8E);
+    idt_set_descriptor(1,  isr1,  0x8E);
+    idt_set_descriptor(2,  isr2,  0x8E);
+    idt_set_descriptor(3,  isr3,  0x8E);
+    idt_set_descriptor(4,  isr4,  0x8E);
+    idt_set_descriptor(5,  isr5,  0x8E);
+    idt_set_descriptor(6,  isr6,  0x8E);
+    idt_set_descriptor(7,  isr7,  0x8E);
+    idt_set_descriptor(8,  isr8,  0x8E);
+    idt_set_descriptor(9,  isr9,  0x8E);
+    idt_set_descriptor(10, isr10, 0x8E);
+    idt_set_descriptor(11, isr11, 0x8E);
+    idt_set_descriptor(12, isr12, 0x8E);
+    idt_set_descriptor(13, isr13, 0x8E);
+    idt_set_descriptor(14, isr14, 0x8E);
+    idt_set_descriptor(15, isr15, 0x8E);
+    idt_set_descriptor(16, isr16, 0x8E);
+    idt_set_descriptor(17, isr17, 0x8E);
+    idt_set_descriptor(18, isr18, 0x8E);
+    idt_set_descriptor(19, isr19, 0x8E);
+    idt_set_descriptor(20, isr20, 0x8E);
+    idt_set_descriptor(21, isr21, 0x8E);
+    idt_set_descriptor(22, isr22, 0x8E);
+    idt_set_descriptor(23, isr23, 0x8E);
+    idt_set_descriptor(24, isr24, 0x8E);
+    idt_set_descriptor(25, isr25, 0x8E);
+    idt_set_descriptor(26, isr26, 0x8E);
+    idt_set_descriptor(27, isr27, 0x8E);
+    idt_set_descriptor(28, isr28, 0x8E);
+    idt_set_descriptor(29, isr29, 0x8E);
+    idt_set_descriptor(30, isr30, 0x8E);
+    idt_set_descriptor(31, isr31, 0x8E);
+    
+    /* IRQs 32..47 (irq0..irq15) */
+    idt_set_descriptor(32, irq0,  0x8E);
+    idt_set_descriptor(33, irq1,  0x8E);
+    idt_set_descriptor(34, irq2,  0x8E);
+    idt_set_descriptor(35, irq3,  0x8E);
+    idt_set_descriptor(36, irq4,  0x8E);
+    idt_set_descriptor(37, irq5,  0x8E);
+    idt_set_descriptor(38, irq6,  0x8E);
+    idt_set_descriptor(39, irq7,  0x8E);
+    
+    idt_set_descriptor(40, irq8,  0x8E);
+    idt_set_descriptor(41, irq9,  0x8E);
+    idt_set_descriptor(42, irq10, 0x8E);
+    idt_set_descriptor(43, irq11, 0x8E);
+    idt_set_descriptor(44, irq12, 0x8E);
+    idt_set_descriptor(45, irq13, 0x8E);
+    idt_set_descriptor(46, irq14, 0x8E);
+    idt_set_descriptor(47, irq15, 0x8E);
 
     lidt(idt, sizeof(idt) - 1);
 
@@ -203,15 +149,6 @@ void interrupts_init() {
     io_outb(0x21, a1);
     io_outb(0xA1, a2);
 
-    // unsigned char mask = io_inb(0x21); // master PIC mask port
-    // char buf[32];
-    // /* convert mask to hex string quickly */
-    // buf[0] = 'M'; buf[1] = 'K'; buf[2] = ':'; buf[3] = ' ';
-    // buf[4] = "0123456789ABCDEF"[(mask >> 4) & 0xF];
-    // buf[5] = "0123456789ABCDEF"[mask & 0xF];
-    // buf[6] = 0;
-    // screen_print(buf, 6);
-
     // Unmask IRQ0 on master PIC so PIT ticks get through
     {
         unsigned char mask = io_inb(PIC1_DATA);
@@ -226,7 +163,6 @@ void interrupts_init() {
     io_outb(PIT_CHANNEL0, divisor & 0xFF);       // low byte
     io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF);// high byte
 
-    asm volatile("int $0x20");
     // Enable interrupts
     asm volatile("sti");
 }
@@ -249,30 +185,18 @@ void exception_handler_c(unsigned int int_no) {
     }
 }
 
-void irq_handler_c(unsigned int int_no) {
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-    screen_print("Shit", 4);
-
+void irq_handler_c(unsigned int int_no, unsigned int* regs) {
     if (int_no < 32 || int_no > 47) return;
 
     unsigned int irq = int_no - 32;
 
     if (irq == 0) {
-        // Timer tick: schedule next process
+        // process_scheduler_next_process(regs);
     } else if (irq == 1) {
         // Keyboard shit
     } else {
-        // other IRQs
+        // Other IRQs
     }
 
-    // Acknowledge PIC(s)
     send_eoi(irq);
 }

@@ -113,11 +113,12 @@ EXCP_STUB 31
 %define IRQ %1
 %assign VEC 32 + IRQ
 irq%1:
-    pusha
+    pushad
+    push esp
     push dword VEC
     call irq_handler_c
-    add esp, 4
-    popa
+    add esp, 8
+    popad
     iret
 %endmacro
 

@@ -117,3 +117,10 @@ char* str_concat(const char* s1, const char* s2) {
 
     return result;
 }
+
+static int rand_state = 183;
+int rand() {
+    long r = ((rand_state * 1103515245) + 12345);
+    rand_state = r % 0xffffffff;
+    return rand_state;
+}
