@@ -61,7 +61,7 @@ extern irq_handler_c         ; void irq_handler_c(unsigned int int_no);
 ; ------------------------
 ; Exception stubs 0..31
 ; ------------------------
-%macro EXCP_STUB 1
+%macro isr 1
 %define VEC %1
 isr%1:
     pusha
@@ -72,38 +72,38 @@ isr%1:
     iret
 %endmacro
 
-EXCP_STUB 0
-EXCP_STUB 1
-EXCP_STUB 2
-EXCP_STUB 3
-EXCP_STUB 4
-EXCP_STUB 5
-EXCP_STUB 6
-EXCP_STUB 7
-EXCP_STUB 8
-EXCP_STUB 9
-EXCP_STUB 10
-EXCP_STUB 11
-EXCP_STUB 12
-EXCP_STUB 13
-EXCP_STUB 14
-EXCP_STUB 15
-EXCP_STUB 16
-EXCP_STUB 17
-EXCP_STUB 18
-EXCP_STUB 19
-EXCP_STUB 20
-EXCP_STUB 21
-EXCP_STUB 22
-EXCP_STUB 23
-EXCP_STUB 24
-EXCP_STUB 25
-EXCP_STUB 26
-EXCP_STUB 27
-EXCP_STUB 28
-EXCP_STUB 29
-EXCP_STUB 30
-EXCP_STUB 31
+isr 0
+isr 1
+isr 2
+isr 3
+isr 4
+isr 5
+isr 6
+isr 7
+isr 8
+isr 9
+isr 10
+isr 11
+isr 12
+isr 13
+isr 14
+isr 15
+isr 16
+isr 17
+isr 18
+isr 19
+isr 20
+isr 21
+isr 22
+isr 23
+isr 24
+isr 25
+isr 26
+isr 27
+isr 28
+isr 29
+isr 30
+isr 31
 
 ; ------------------------
 ; IRQ stubs 32..47 (irq0..irq15)
@@ -113,12 +113,26 @@ EXCP_STUB 31
 %define IRQ %1
 %assign VEC 32 + IRQ
 irq%1:
+    cli
+
     pushad
+    push ds
+    push es
+    push fs
+    push gs
+
     push esp
     push dword VEC
     call irq_handler_c
     add esp, 8
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
     popad
+
+    sti
     iret
 %endmacro
 

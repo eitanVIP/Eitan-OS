@@ -191,7 +191,7 @@ void irq_handler_c(unsigned int int_no, unsigned int* regs) {
     unsigned int irq = int_no - 32;
 
     if (irq == 0) {
-        // process_scheduler_next_process(regs);
+        process_scheduler_next_process(regs);
     } else if (irq == 1) {
         // Keyboard shit
     } else {
