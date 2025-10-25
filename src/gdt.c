@@ -48,3 +48,7 @@ void gdt_init() {
     setGdt(5 * 8 - 1, (unsigned int) gdt);
     reloadSegments();
 }
+
+unsigned short gdt_get_index(unsigned char index, unsigned char TI, unsigned char RPL) {
+    return (index << 3) | (TI << 2) | RPL;
+}
