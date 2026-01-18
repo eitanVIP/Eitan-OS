@@ -37,5 +37,5 @@ grub-mkrescue -o $BUILD_DIR/eitanos.iso $BUILD_DIR/iso
 
 # Launch in QEMU
 echo "[*] Launching QEMU..."
-#qemu-system-i386 $BUILD_DIR/eitanos.iso -m 512 -serial stdio
-qemu-system-i386 $BUILD_DIR/eitanos.iso -m 512 -serial stdio -S -gdb tcp::1234
+qemu-system-i386 $BUILD_DIR/eitanos.iso -m 512 -serial stdio
+#qemu-system-i386 $BUILD_DIR/eitanos.iso -m 512 -serial stdio -S -gdb tcp::1234
