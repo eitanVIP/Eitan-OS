@@ -18,7 +18,7 @@ cmake --build $BUILD_DIR
 
 # Link everything from build/*.o
 echo "[*] Linking kernel..."
-ld -n -m elf_i386 -T $LINKER_SCRIPT -o $KERNEL_ELF $BUILD_DIR/*.o
+ld -n -m elf_i386 -T $LINKER_SCRIPT -o $KERNEL_ELF $BUILD_DIR/start.o $(ls $BUILD_DIR/*.o | grep -v "start.o")
 
 # Create ISO folder for GRUB
 mkdir -p $BUILD_DIR/iso/boot/grub
@@ -37,5 +37,5 @@ grub-mkrescue -o $BUILD_DIR/eitanos.iso $BUILD_DIR/iso
 
 # Launch in QEMU
 echo "[*] Launching QEMU..."
-qemu-system-i386 $BUILD_DIR/eitanos.iso -m 512 -serial stdio
-#qemu-system-i386 $BUILD_DIR/eitanos.iso -m 512 -serial stdio -S -gdb tcp::1234
+qemu-system-i386 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio
+qemu-system-i386 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio -S -gdb tcp::1234

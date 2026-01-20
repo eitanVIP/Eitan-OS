@@ -178,7 +178,7 @@ void send_eoi(unsigned int irq_number) {
 
 void exception_handler_c(unsigned int int_no) {
     char* msg = str_concat("CPU Exception: ", num_to_str(int_no));
-    screen_print(msg, strlen(msg));
+    screen_print(msg);
 
     while (1) {
         asm volatile("hlt");

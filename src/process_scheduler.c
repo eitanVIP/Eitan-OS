@@ -10,7 +10,7 @@
 // #define MAX_PROCESSES 100
 #define STACK_SIZE 16384
 
-typedef struct cpu_state {
+typedef struct {
     unsigned int gs;
     unsigned int fs;
     unsigned int es;
@@ -35,10 +35,10 @@ typedef struct cpu_state {
 typedef struct process {
     unsigned int pid;
     cpu_state_t regs;
-    unsigned int stack_start;
+    void* stack_start;
     unsigned int pending_signals;
 
-    struct process *next;
+    struct process* next;
 } process_t;
 
 typedef struct stack {
@@ -64,7 +64,7 @@ void process_scheduler_init() {
     current_process->pid = 0;
     current_process->regs = (cpu_state_t){ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     current_process->pending_signals = 0;
-    current_process->stack_start = 0x10401C;
+    current_process->stack_start = (void*)0x10401C;
     current_process->next = current_process;
 
     stack_list = malloc(sizeof(stack_t));
@@ -85,7 +85,7 @@ void process_scheduler_add_process(void* process_code_start) {
     unsigned int count = 0;
     while (current_stack) {
         if (current_stack->free) {
-            new_process->stack_start = (unsigned char)current_stack->start;
+            new_process->stack_start = current_stack->start;
             current_stack->free = 0;
 
             found = 1;
@@ -101,13 +101,13 @@ void process_scheduler_add_process(void* process_code_start) {
         previous_stack->next->free = 0;
         previous_stack->next->start = (void*)((count + 1) * STACK_SIZE);
 
-        new_process->stack_start = (unsigned int)previous_stack->next->start;
+        new_process->stack_start = previous_stack->next->start;
     }
 
     unsigned short kernel_code_segment = gdt_get_index(1, 0, 0);
     unsigned short kernel_data_segment = gdt_get_index(2, 0, 0);
     new_process->regs = (cpu_state_t){ kernel_data_segment, kernel_data_segment, kernel_data_segment, kernel_data_segment,
-        0, 0, 0, new_process->stack_start, 0, 0, 0, 0, (unsigned int)process_code_start,
+        0, 0, 0, (unsigned int)new_process->stack_start, 0, 0, 0, 0, (unsigned int)process_code_start,
         kernel_code_segment, 1 << 1 | 1 << 9 /* bit1 = 1, bit9 = interrupt enabled = 1 */ };
 
     new_process->next = current_process->next;

@@ -5,23 +5,13 @@
 #include "screen.h"
 #include "io.h"
 #include "eitan_lib.h"
+#include "filesystem.h"
 #include "gdt.h"
 #include "interrupts.h"
 #include "memory.h"
 #include "process_scheduler.h"
 
-void kernel_main(void) {
-    screen_print("", 0);
-    memory_heap_init();
-    gdt_init();
-    process_scheduler_init();
-    interrupts_init();
-    screen_clear_screen();
-
-    const char* msgs[] = { "Eitan OS Started...\n", "Hello user!\n" };
-    for (int i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++)
-        screen_print(msgs[i], strlen(msgs[i]));
-
+void multi_process_test(void) {
     unsigned char* test_code = malloc(64);
     unsigned char* print_func = screen_print;
     unsigned int relative_jmp = (int)print_func - ((int)test_code + 24);
@@ -86,10 +76,34 @@ void kernel_main(void) {
     test_code[41] = 0xEB;
     test_code[42] = 0xD5;
     process_scheduler_add_process(test_code);
+}
+
+void kernel_main(void) {
+    memory_heap_init();
+    gdt_init();
+    process_scheduler_init();
+    interrupts_init();
+
+    screen_clear_screen();
+    const char* msgs[] = { "Eitan OS Started...\n", "Hello user!\n" };
+    for (int i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++)
+        screen_print(msgs[i]);
+
+    filesystem_init();
+
+    // filesystem_write_sectors(30, "SIGMA", 6);
+    char data[6];
+    filesystem_read_sectors(30, data, 6);
+    screen_print(data);
+
+    // const char* test[] = { "1, ", "2, ", "3, ", "4, ", "5, ", "6, ", "7\n" };
+    // const char* msg = str_concats(test, sizeof(test) / sizeof(test[0]));
+    // screen_print(msg);
+    // memory_print_blocks();
 
     while (1) {
-        const char keyboard = io_keyboard_read();
-        screen_print(&keyboard, 1);
+        const char keyboard[2] = { io_keyboard_read(), '\0' };
+        screen_print(keyboard);
     }
 
     while (1) {

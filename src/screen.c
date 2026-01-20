@@ -4,6 +4,8 @@
 
 #include "screen.h"
 
+#include "eitan_lib.h"
+
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
 
@@ -33,8 +35,8 @@ void screen_norm_cursor() {
     }
 }
 
-void screen_print(const char* msg, int size) {
-    for (int i = 0; i < size; i++) {
+void screen_print(const char* msg) {
+    for (int i = 0; i < strlen(msg); i++) {
         if (msg[i] == '\n') {
             cursor_x = 0;
             cursor_y++;

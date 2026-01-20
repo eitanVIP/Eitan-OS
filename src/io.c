@@ -8,12 +8,22 @@
 #define KEYBOARD_DATA_PORT 0x60
 
 void io_outb(unsigned short port, unsigned char val) {
-    __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
+    asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
 unsigned char io_inb(unsigned short port) {
     unsigned char ret;
-    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
+
+void io_outw(unsigned short port, unsigned short val) {
+    asm volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
+}
+
+unsigned short io_inw(unsigned short port) {
+    unsigned short ret;
+    asm volatile ("inw %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
 

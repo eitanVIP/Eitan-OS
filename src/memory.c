@@ -86,13 +86,13 @@ void free(void* ptr) {
 
 void memory_print_blocks() {
     block_t* curr = free_list;
-    screen_print("Memory Blocks:\n", 15);
+    screen_print("Memory Blocks:\n");
     while (curr) {
         char* size_str = num_to_str(curr->size);
-        screen_print(size_str, strlen(size_str));
-        screen_print("\n", 1);
+        screen_print(size_str);
+        screen_print("\n");
         free(size_str);
         curr = curr->next;
     }
-    screen_print("Memory Blocks End\n", 18);
+    screen_print("Memory Blocks End\n");
 }

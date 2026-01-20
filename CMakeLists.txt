@@ -33,7 +33,9 @@ endforeach()
 add_custom_target(objs ALL DEPENDS ${OBJ_FILES})
 
 # 👇 This is the magic line: add a "fake" target for CLion's code model
-add_executable(fake_target ${SRC_FILES})
+add_executable(fake_target ${SRC_FILES}
+        src/filesystem.c
+        src/filesystem.h)
 
 # Pass the same compiler flags so CLion knows how to parse code
 target_compile_options(fake_target PRIVATE -m32 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib)
