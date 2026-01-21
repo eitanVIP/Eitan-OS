@@ -3,8 +3,7 @@
 //
 
 #pragma once
-#define NULL 0
-typedef unsigned long long size_t;
+#include "stdint.h"
 
 void memory_heap_init(void);
 void* malloc(size_t size);

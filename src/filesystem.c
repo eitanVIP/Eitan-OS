@@ -56,15 +56,15 @@ static char model[41];
 static unsigned short sector_count;
 static unsigned char writable_drive;
 
-static void filesystem_wait_busy() {
+static void wait_busy() {
     while (io_inb(ATA_COMMAND_STATUS) & ATA_STATUS_BUSY);
 }
 
-static void filesystem_wait_data_request_ready() {
+static void wait_data_request_ready() {
     while (!(io_inb(ATA_COMMAND_STATUS) & ATA_STATUS_DATA_REQUEST_READY));
 }
 
-static void filesystem_identify_drive() {
+static void identify_drive() {
     io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE);
     io_outb(ATA_SECTORS, 0);
     io_outb(ATA_LBA_LOW, 0);
@@ -78,7 +78,7 @@ static void filesystem_identify_drive() {
         return;
     }
 
-    filesystem_wait_busy();
+    wait_busy();
 
     // Check if the drive is ATA or something else (like ATAPI/CD-ROM)
     writable_drive = 1;
@@ -88,7 +88,7 @@ static void filesystem_identify_drive() {
         return;
     }
 
-    filesystem_wait_data_request_ready();
+    wait_data_request_ready();
 
     unsigned short data[256];
     for (int i = 0; i < 256; i++) {
@@ -125,7 +125,7 @@ void filesystem_read_sectors(unsigned int lba, void* target, size_t size) {
     if (count < 1 || lba + count >= sector_count)
         return;
 
-    filesystem_wait_busy();
+    wait_busy();
 
     // Set up the Drive/Head Register
     // 1, Use LBA, 1, Master, LBA
@@ -142,8 +142,8 @@ void filesystem_read_sectors(unsigned int lba, void* target, size_t size) {
 
     unsigned short* t = target;
     for (int j = 0; j < count; j++) {
-        filesystem_wait_busy();
-        filesystem_wait_data_request_ready();
+        wait_busy();
+        wait_data_request_ready();
 
         for (int i = 0; i < 256; i++) {
             int word_idx = j * 256 + i;
@@ -166,7 +166,7 @@ void filesystem_write_sectors(unsigned int lba, void* src, size_t size) {
     if (!writable_drive || count < 1 || lba + count >= sector_count)
         return;
 
-    filesystem_wait_busy();
+    wait_busy();
 
     // Set up the Drive/Head Register
     // 1, Use LBA, 1, Master, LBA
@@ -183,8 +183,8 @@ void filesystem_write_sectors(unsigned int lba, void* src, size_t size) {
 
     unsigned short* s = src;
     for (int j = 0; j < count; j++) {
-        filesystem_wait_busy();
-        filesystem_wait_data_request_ready();
+        wait_busy();
+        wait_data_request_ready();
 
         for (int i = 0; i < 256; i++) {
             int word_idx = j * 256 + i;
@@ -206,7 +206,7 @@ void filesystem_write_sectors(unsigned int lba, void* src, size_t size) {
     }
 }
 
-static void filesystem_init_superblock() {
+static void init_superblock() {
     superblock_t superblock = {
         MAGIC_NUMBER,
         1,
@@ -219,8 +219,8 @@ static void filesystem_init_superblock() {
 }
 
 void filesystem_init(void) {
-    filesystem_identify_drive();
-    filesystem_init_superblock();
+    identify_drive();
+    init_superblock();
 }
 
 int filesystem_read_file(char* name, unsigned char** data_ptr) {
@@ -256,7 +256,34 @@ int filesystem_read_file(char* name, unsigned char** data_ptr) {
     return 0;
 }
 
-int filesystem_write_file(char* name, unsigned char* data, size_t size) {
+static bool_t find_next_entry(int entry_sector, const uint8_t* entry_sector_buf, int entry_idx, file_entry_t* next_entry) {
+    for (int i = entry_idx + 1; i < 4; i++) {
+        *next_entry = ((file_entry_t*)&entry_sector_buf)[i];
+        if (next_entry->magic_number != MAGIC_NUMBER)
+            continue;
+
+        return 1;
+    }
+
+    for (int i = entry_sector; i < FILE_TABLE_SECTORS + 1; i++) {
+        unsigned char sector_buf[512] = {};
+        filesystem_read_sectors(i, sector_buf, 512);
+
+        for (int j = 0; j < 4; j++) {
+            *next_entry = ((file_entry_t*)&sector_buf)[j];
+            if (next_entry->magic_number != MAGIC_NUMBER)
+                continue;
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static bool_t find_space_for_file(size_t file_size, uint32_t* file_start_sector, uint32_t* file_entry_sector, uint8_t* file_entry_idx) {
+    bool_t are_there_entries = 0;
+
     for (int i = 1; i < FILE_TABLE_SECTORS + 1; i++) {
         unsigned char sector_buf[512] = {};
         filesystem_read_sectors(i, sector_buf, 512);
@@ -266,37 +293,87 @@ int filesystem_write_file(char* name, unsigned char* data, size_t size) {
             if (entry.magic_number != MAGIC_NUMBER)
                 continue;
 
-            file_entry_t next_entry;
-            unsigned char found_next_entry = 0;
+            are_there_entries = 1;
 
-            // Before running this loop, check if next entry is in the current sector
+            file_entry_t next_entry = {};
+            bool_t found_next = find_next_entry(i, sector_buf, j, &next_entry);
 
-            for (int k = i + 1; k < FILE_TABLE_SECTORS + 1; k++) {
-                unsigned char next_sector_buf[512] = {};
-                filesystem_read_sectors(k, sector_buf, 512);
+            // Find how much space between end of current file and (start of next file or end of disk)
+            uint32_t file_end_sector = entry.start_sector + (uint32_t)ceil(entry.size / 512);
+            uint32_t space = 0;
+            if (found_next)
+                space = 512 * (next_entry.start_sector - file_end_sector);
+            else
+                space = 512 * (sector_count - 1 - file_end_sector);
 
-                for (int l = 0; l < 4; l++) {
-                    next_entry = ((file_entry_t*)&next_sector_buf)[k];
-                    if (entry.magic_number != MAGIC_NUMBER)
-                        continue;
-
-                    found_next_entry = 1;
-                    break;
+            if (space >= file_size) {
+                *file_start_sector = file_end_sector;
+                if (j + 1 < 4) {
+                    *file_entry_sector = i;
+                    *file_entry_idx = j + 1;
+                } else {
+                    *file_entry_sector = i + 1;
+                    *file_entry_idx = 0;
                 }
 
-                if (found_next_entry)
-                    break;
-            }
-
-            if (found_next_entry) {
-                unsigned int space = next_entry.start_sector - (entry.start_sector + entry.size);
-                if (space >= size) {
-                    // Place at entry.start_sector + entry.size
-                }
-            } else {
-                // Check if can place in end
+                return 1;
             }
         }
+    }
+
+    if (!are_there_entries) {
+        if ((sector_count - 1 - FILE_TABLE_SECTORS) * 512 >= file_size) {
+            *file_start_sector = FILE_TABLE_SECTORS + 1;
+            *file_entry_sector = 1;
+            *file_entry_idx = 0;
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void shift_file_entries_forward(uint32_t sector_start, uint32_t idx_start) {
+    file_entry_t next_entry = {};
+
+    file_entry_t entries[512 / sizeof(file_entry_t)] = {};
+    filesystem_read_sectors(sector_start, entries, 512);
+
+    for (uint8_t i = idx_start; i < 4; i++) {
+        file_entry_t entry = entries[i];
+
+        if (i < 3) {
+            file_entry_t temp = entries[i];
+            entries[i] = {};
+            next_entry = entries[i + 1];
+            entries[i + 1] = next_entry;
+        } else {
+            file_entry_t temp = entries[i];
+            entries[i] = next_entry;
+            next_entry = entries[i + 1];
+            entries[i + 1] = temp;
+        }
+    }
+
+    for (uint32_t i = sector_start + 1; i < FILE_TABLE_SECTORS + 1; i++) {
+        unsigned char sector_buf[512] = {};
+        filesystem_read_sectors(i, sector_buf, 512);
+
+        for (uint8_t j = 0; j < 4; j++) {
+            file_entry_t entry = ((file_entry_t*)&sector_buf)[j];
+            if (entry.magic_number != MAGIC_NUMBER)
+                continue;
+        }
+    }
+}
+
+bool_t filesystem_write_file(char* name, unsigned char* data, size_t size) {
+    uint32_t file_start_sector = 0;
+    uint32_t file_entry_sector = 0;
+    uint8_t file_entry_idx = 0;
+    if (find_space_for_file(size, &file_start_sector, &file_entry_sector, &file_entry_idx)) {
+
     }
 
     return 0;
