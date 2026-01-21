@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "memory.h"
+#include "stdint.h"
 
 // Math
 double abs(double num);
@@ -12,7 +12,8 @@ double floor(double num);
 double ceil(double num);
 double round(double num);
 int rand();
-void* memcpy(void* dest, const void* src, const size_t count);
+void* memcpy(void* dest, const void* src, const size_t size);
+void* memset(void* dest, uint8_t val, size_t size);
 
 // Strings
 int strlen(const char* str);

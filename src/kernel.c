@@ -92,9 +92,16 @@ void kernel_main(void) {
     filesystem_init();
 
     // filesystem_write_sectors(30, "SIGMA", 6);
-    char data[6];
-    filesystem_read_sectors(30, data, 6);
-    screen_print(data);
+    // char data[6];
+    // filesystem_read_sectors(30, data, 6);
+    // screen_print(data);
+
+    screen_print("\n1");
+    filesystem_write_file("SIGMA", "BALLS", strlen("BALLS") + 1);
+    screen_print("7");
+    // uint8_t* data_ptr;
+    // filesystem_read_file("SIGMA", &data_ptr);
+    // screen_print(*data_ptr);
 
     // const char* test[] = { "1, ", "2, ", "3, ", "4, ", "5, ", "6, ", "7\n" };
     // const char* msg = str_concats(test, sizeof(test) / sizeof(test[0]));

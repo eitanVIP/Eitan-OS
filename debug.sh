@@ -1,1 +1,1 @@
-gdb build/kernel.elf -ex 'target remote localhost:1234' -ex 'b kernel_main' -ex 'c' -ex 'b * irq0+27' -ex 'c'
+gdb build/kernel.elf -ex "set disassembly-flavor intel" -ex 'target remote localhost:1234' -ex 'b kernel_main' -ex 'c' -ex "display/10i \$pc"
