@@ -5,13 +5,19 @@
 #include "screen.h"
 
 #include "eitan_lib.h"
+#include "memory.h"
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
+#define BUFFER_SIZE (VGA_WIDTH * VGA_HEIGHT * 3)
 
-volatile unsigned short* VGA = (unsigned short*)0xB8000;
+volatile uint16_t* VGA = (uint16_t*)0xB8000;
 int cursor_x = 0;
 int cursor_y = 0;
+
+char buffer[BUFFER_SIZE] = {};
+int scroll = 0;
+int buffer_end = 0;
 
 void screen_put_char(char c, int x, int y) {
     VGA[y * VGA_WIDTH + x] = 0x0F00 | c;
@@ -35,21 +41,83 @@ void screen_norm_cursor() {
     }
 }
 
-void screen_print(const char* msg) {
-    for (int i = 0; i < strlen(msg); i++) {
-        if (msg[i] == '\n') {
+void screen_flush() {
+    int buffer_start = 0;
+    if (scroll != 0) {
+        int new_line_count = 0;
+        bool_t counted_enough = 0;
+        for (int i = 0; i < buffer_end; i++) {
+            if (buffer[i] == '\n') {
+                new_line_count++;
+
+                if (new_line_count >= scroll) {
+                    buffer_start = i + 1;
+                    counted_enough = 1;
+                    break;
+                }
+            }
+        }
+
+        if (!counted_enough) {
+            screen_clear_screen();
+            return;
+        }
+    }
+    int buffer_end_clamped = min(buffer_end, buffer_start + VGA_WIDTH * VGA_HEIGHT);
+    cursor_x = 0;
+    cursor_y = 0;
+    screen_clear_screen();
+
+    for (int i = buffer_start; i < buffer_end_clamped; i++) {
+        if (buffer[i] == '\n') {
             cursor_x = 0;
             cursor_y++;
-        } else if (msg[i] == 8) {
+        } else if (buffer[i] == 8) {
             cursor_x--;
             screen_norm_cursor();
             screen_put_char(0, cursor_x, cursor_y);
         } else {
-            screen_put_char(msg[i], cursor_x, cursor_y);
+            screen_put_char(buffer[i], cursor_x, cursor_y);
             cursor_x++;
             screen_norm_cursor();
         }
     }
+}
+
+void screen_print(const char* msg) {
+    int size = min(strlen(msg), BUFFER_SIZE - buffer_end);
+    memcpy(&buffer[buffer_end], msg, size);
+    buffer_end += size;
+
+    // for (int i = 0; i < size; i++) {
+    //     if (msg[i] == '\n') {
+    //         int buffer_start = buffer_end;
+    //         buffer_end = ceil((double)buffer_end / (VGA_WIDTH - 1)) * VGA_WIDTH;
+    //
+    //         for(int j = buffer_start; j < buffer_end; j++) {
+    //             buffer[i] = 0;
+    //         }
+    //     } else {
+    //         buffer[buffer_end++] = msg[i];
+    //     }
+    // }
+
+    screen_flush();
+}
+
+void screen_println(const char* msg) {
+    char* new_msg = str_concat(msg, "\n");
+    screen_print(new_msg);
+    free(new_msg);
+}
+
+void screen_scroll(int to) {
+    scroll = max(to, 0);
+    screen_flush();
+}
+
+int screen_get_scroll() {
+    return scroll;
 }
 
 void screen_clear_screen() {

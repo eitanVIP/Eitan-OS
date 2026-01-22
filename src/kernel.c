@@ -99,21 +99,44 @@ void kernel_main(void) {
     // for (int i = 0; i < 10; i++) {
     //     char* name = num_to_str(i * 100);
     //     filesystem_write_file(name, name, strlen(name) + 1);
+    //     free(name);
     // }
     // uint8_t* data_ptr;
     // filesystem_read_file("SIGMA", &data_ptr);
     // screen_print(data_ptr);
     // free(data_ptr);
-    filesystem_print_all_entries();
+    // filesystem_print_all_entries();
 
     // const char* test[] = { "1, ", "2, ", "3, ", "4, ", "5, ", "6, ", "7\n" };
     // const char* msg = str_concats(test, sizeof(test) / sizeof(test[0]));
     // screen_print(msg);
     // memory_print_blocks();
 
+    for (int i = 0; i < 40; i++) {
+        char* name = num_to_str(i * 100);
+        screen_println(name);
+        free(name);
+    }
+
     while (1) {
-        const char keyboard[2] = { io_keyboard_read(), '\0' };
-        screen_print(keyboard);
+        uint16_t scancode = io_keyboard_read();
+        if (io_is_character(scancode)) {
+            const char keyboard[2] = { io_scancode_to_character(scancode), '\0' };
+            screen_print(keyboard);
+        } else {
+            switch (scancode & 0xFF) {
+                case 0x48: // Arrow Up
+                    screen_scroll(screen_get_scroll() - 1);
+                    break;
+
+                case 0x50: // Arrow Down
+                    screen_scroll(screen_get_scroll() + 1);
+                    break;
+
+                default:
+                    break;
+            }
+        }
     }
 
     while (1) {
