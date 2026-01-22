@@ -4,6 +4,8 @@
 
 #include "eitan_lib.h"
 
+#include "memory.h"
+
 double abs(double num) {
     if (num < 0)
         return -num;
@@ -31,6 +33,18 @@ double pow(double base, int power) {
     }
 }
 
+double max(double num1, double num2) {
+    return num1 > num2 ? num1 : num2;
+}
+
+double min(double num1, double num2) {
+    return num1 < num2 ? num1 : num2;
+}
+
+double clamp(double num, double min, double max) {
+    return num > max ? max : num < min ? min : num;
+}
+
 double floor(double num) {
     return num >= 0 ? (int)num : ((num - (int)num) != 0 ? (int)num - 1 : num);
 }
@@ -46,6 +60,34 @@ double round(double num) {
     double frac = num - flo;
     return frac >= 0.5 ? flo + 1 : flo;
 }
+
+static int rand_state = 183;
+int rand() {
+    long r = ((rand_state * 1103515245) + 12345);
+    rand_state = r % 0xffffffff;
+    return rand_state;
+}
+
+
+
+void* memcpy(void* dest, const void* src, const size_t size) {
+    unsigned char* d = dest;
+    const unsigned char* s = src;
+    for (size_t i = 0; i < size; i++) {
+        d[i] = s[i];
+    }
+    return dest;
+}
+
+void* memset(void* dest, uint8_t val, size_t size) {
+    unsigned char *d = dest;
+    while (size--) {
+        *d++ = val;
+    }
+    return dest;
+}
+
+
 
 int strlen(const char* str) {
     int count = 0;
@@ -160,28 +202,4 @@ unsigned char strcmp(const char* s1, const char* s2) {
     }
 
     return 1;
-}
-
-static int rand_state = 183;
-int rand() {
-    long r = ((rand_state * 1103515245) + 12345);
-    rand_state = r % 0xffffffff;
-    return rand_state;
-}
-
-void* memcpy(void* dest, const void* src, const size_t size) {
-    unsigned char* d = dest;
-    const unsigned char* s = src;
-    for (size_t i = 0; i < size; i++) {
-        d[i] = s[i];
-    }
-    return dest;
-}
-
-void* memset(void* dest, uint8_t val, size_t size) {
-    unsigned char *d = dest;
-    while (size--) {
-        *d++ = val;
-    }
-    return dest;
 }

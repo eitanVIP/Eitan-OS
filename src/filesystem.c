@@ -32,10 +32,13 @@
 #define ATA_DRIVE_SELECT_MASTER_LBA 0b11100000
 #define ATA_DRIVE_SELECT_SLAVE_LBA  0b11110000
 
-#define FILE_TABLE_SECTORS 20
-#define ENTRIES_PER_SECTOR (512 / 64)
-#define MAX_FILES (ENTRIES_PER_SECTOR * FILE_TABLE_SECTORS)
 #define MAGIC_NUMBER 0xE17A9055
+#define SECTOR_SIZE 512
+#define FILE_TABLE_SECTORS 20
+#define ENTRIES_PER_SECTOR (SECTOR_SIZE / sizeof(file_entry_t))
+#define FILE_TABLE_ENTRIES (ENTRIES_PER_SECTOR * FILE_TABLE_SECTORS)
+#define FILE_TABLE_SIZE (FILE_TABLE_SECTORS * SECTOR_SIZE)
+#define MAX_FILES FILE_TABLE_ENTRIES
 
 typedef struct {
     unsigned int magic_number;
@@ -97,7 +100,6 @@ static void identify_drive() {
     }
 
     // Disk model
-    // memcpy(model, &data[27], 40);
     for (int i = 0; i < 20; i++) {
         model[i * 2] = data[27 + i] >> 8;
         model[i * 2 + 1] = data[27 + i] & 0xFF;
@@ -111,7 +113,7 @@ static void identify_drive() {
     // Disk number of sectors
     memcpy(&sector_count, &data[60], 2);
     char* sector_count_str = num_to_str(sector_count);
-    char* size_str = num_to_str((double)sector_count * 512);
+    char* size_str = num_to_str((double)sector_count * SECTOR_SIZE);
     char* strs2[] = { "Sector count: ", sector_count_str, ", Disk size: ", size_str, "\n" };
     msg = str_concats(strs2, 5);
     screen_print(msg);
@@ -121,7 +123,7 @@ static void identify_drive() {
 }
 
 void filesystem_read_sectors(unsigned int lba, void* target, size_t size) {
-    const unsigned char count = ceil(size / 512.0);
+    const unsigned char count = ceil((double)size / SECTOR_SIZE);
 
     if (count < 1 || lba + count >= sector_count)
         return;
@@ -162,7 +164,7 @@ void filesystem_read_sectors(unsigned int lba, void* target, size_t size) {
 }
 
 void filesystem_write_sectors(unsigned int lba, const void* src, size_t size) {
-    const unsigned char count = ceil(size / 512.0);
+    const unsigned char count = ceil((double)size / SECTOR_SIZE);
 
     if (!writable_drive || count < 1 || lba + count >= sector_count)
         return;
@@ -214,7 +216,7 @@ static void init_superblock() {
         sector_count,
         1,
         FILE_TABLE_SECTORS,
-        512
+        SECTOR_SIZE
     };
     filesystem_write_sectors(0, &superblock, sizeof(superblock));
 }
@@ -224,108 +226,93 @@ void filesystem_init(void) {
     init_superblock();
 }
 
-bool_t filesystem_read_file(char* name, unsigned char** data_ptr) {
-    file_entry_t file_entry = {};
-    unsigned char found = 0;
+bool_t filesystem_read_file(char* name, uint8_t** data_ptr) {
+    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
 
-    for (int i = 1; i < FILE_TABLE_SECTORS + 1; i++) {
-        unsigned char sector_buf[512] = {};
-        filesystem_read_sectors(i, sector_buf, 512);
+    file_entry_t file_entry = (file_entry_t){};
+    bool_t found = 0;
 
-        for (int j = 0; j < 4; j++) {
-            file_entry = ((file_entry_t*)&sector_buf)[j];
-            if (file_entry.magic_number != MAGIC_NUMBER)
-                continue;
+    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+        file_entry = file_table[i];
+        if (file_entry.magic_number != MAGIC_NUMBER)
+            continue;
 
-            if (strcmp(file_entry.name, name)) {
-                found = 1;
-                break;
-            }
-        }
-
-        if (found)
+        if (strcmp(file_entry.name, name)) {
+            found = 1;
             break;
+        }
     }
+
+    free(file_table);
 
     if (!found)
         return 0;
 
-    unsigned char* data = malloc(file_entry.size);
+    uint8_t* data = malloc(file_entry.size);
     filesystem_read_sectors(file_entry.start_sector, data, file_entry.size);
     *data_ptr = data;
 
     return 1;
 }
 
-static bool_t find_next_entry(int entry_sector, const uint8_t* entry_sector_buf, int entry_idx, file_entry_t* next_entry) {
-    for (int i = entry_idx + 1; i < 4; i++) {
-        *next_entry = ((file_entry_t*)&entry_sector_buf)[i];
-        if (next_entry->magic_number != MAGIC_NUMBER)
-            continue;
+// static bool_t find_next_entry(int entry_sector, const uint8_t* entry_sector_buf, int entry_idx, file_entry_t* next_entry) {
+//     for (int i = entry_idx + 1; i < 4; i++) {
+//         *next_entry = ((file_entry_t*)&entry_sector_buf)[i];
+//         if (next_entry->magic_number != MAGIC_NUMBER)
+//             continue;
+//
+//         return 1;
+//     }
+//
+//     for (int i = entry_sector; i < FILE_TABLE_SECTORS + 1; i++) {
+//         unsigned char sector_buf[SECTOR_SIZE] = {};
+//         filesystem_read_sectors(i, sector_buf, SECTOR_SIZE);
+//
+//         for (int j = 0; j < 4; j++) {
+//             *next_entry = ((file_entry_t*)&sector_buf)[j];
+//             if (next_entry->magic_number != MAGIC_NUMBER)
+//                 continue;
+//
+//             return 1;
+//         }
+//     }
+//
+//     return 0;
+// }
 
-        return 1;
-    }
+static bool_t find_space_for_file(file_entry_t* file_table, size_t file_size, uint32_t* file_start_sector, uint8_t* file_entry_idx) {
+    bool_t are_there_entries = 0;
 
-    for (int i = entry_sector; i < FILE_TABLE_SECTORS + 1; i++) {
-        unsigned char sector_buf[512] = {};
-        filesystem_read_sectors(i, sector_buf, 512);
+    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+        file_entry_t entry = file_table[i];
+        if (entry.magic_number != MAGIC_NUMBER)
+            break;
+        are_there_entries = 1;
 
-        for (int j = 0; j < 4; j++) {
-            *next_entry = ((file_entry_t*)&sector_buf)[j];
-            if (next_entry->magic_number != MAGIC_NUMBER)
-                continue;
+        // file_entry_t next_entry = {};
+        // bool_t found_next = find_next_entry(i, sector_buf, j, &next_entry);
+
+        uint32_t file_end_sector = entry.start_sector + (uint32_t)ceil((double)entry.size / SECTOR_SIZE);
+        uint32_t space = 0;
+        if (i + 1 < FILE_TABLE_ENTRIES && file_table[i + 1].magic_number == MAGIC_NUMBER) { // Is there next entry
+            file_entry_t next_entry = file_table[i + 1];
+            space = SECTOR_SIZE * (next_entry.start_sector - file_end_sector);
+        } else {
+            space = SECTOR_SIZE * (sector_count - 1 - file_end_sector);
+        }
+
+        if (space >= file_size) {
+            *file_start_sector = file_end_sector;
+            *file_entry_idx = i + 1;
 
             return 1;
         }
     }
 
-    return 0;
-}
-
-static bool_t find_space_for_file(size_t file_size, uint32_t* file_start_sector, uint32_t* file_entry_sector, uint8_t* file_entry_idx) {
-    bool_t are_there_entries = 0;
-
-    for (int i = 1; i < FILE_TABLE_SECTORS + 1; i++) {
-        unsigned char sector_buf[512] = {};
-        filesystem_read_sectors(i, sector_buf, 512);
-
-        for (int j = 0; j < 4; j++) {
-            file_entry_t entry = ((file_entry_t*)&sector_buf)[j];
-            if (entry.magic_number != MAGIC_NUMBER)
-                continue;
-
-            are_there_entries = 1;
-
-            file_entry_t next_entry = {};
-            bool_t found_next = find_next_entry(i, sector_buf, j, &next_entry);
-
-            // Find how much space between end of current file and (start of next file or end of disk)
-            uint32_t file_end_sector = entry.start_sector + (uint32_t)ceil(entry.size / 512);
-            uint32_t space = 0;
-            if (found_next)
-                space = 512 * (next_entry.start_sector - file_end_sector);
-            else
-                space = 512 * (sector_count - 1 - file_end_sector);
-
-            if (space >= file_size) {
-                *file_start_sector = file_end_sector;
-                if (j + 1 < 4) {
-                    *file_entry_sector = i;
-                    *file_entry_idx = j + 1;
-                } else {
-                    *file_entry_sector = i + 1;
-                    *file_entry_idx = 0;
-                }
-
-                return 1;
-            }
-        }
-    }
-
     if (!are_there_entries) {
-        if ((sector_count - 1 - FILE_TABLE_SECTORS) * 512 >= file_size) {
-            *file_start_sector = FILE_TABLE_SECTORS + 1;
-            *file_entry_sector = 1;
+        if ((sector_count - 1 - FILE_TABLE_ENTRIES) * SECTOR_SIZE >= file_size) {
+            *file_start_sector = FILE_TABLE_ENTRIES + 1;
             *file_entry_idx = 0;
 
             return 1;
@@ -335,125 +322,74 @@ static bool_t find_space_for_file(size_t file_size, uint32_t* file_start_sector,
     return 0;
 }
 
-static void shift_file_entries_forward(uint32_t sector_start, uint8_t idx_start) {
-    screen_print("4");
-    for (uint32_t i = FILE_TABLE_SECTORS; i >= sector_start + 1; i--) {
-        screen_print("5");
-        uint8_t sector_buf[1024] = {};
-        filesystem_read_sectors(i - 1, sector_buf, 1024);
-
-        file_entry_t entries[ENTRIES_PER_SECTOR] = {};
-        file_entry_t pre_entries[ENTRIES_PER_SECTOR] = {};
-        memcpy(entries, &sector_buf[256], ENTRIES_PER_SECTOR);
-        memcpy(pre_entries, sector_buf, ENTRIES_PER_SECTOR);
-
-        for (uint8_t j = 3; j >= 1; j--) {
-            entries[j] = entries[j - 1];
-        }
-        entries[0] = pre_entries[3];
-
-        filesystem_write_sectors(i, entries, 512);
+static void shift_file_entries_forward(file_entry_t* file_table, uint8_t idx_start) {
+    for (uint32_t i = FILE_TABLE_ENTRIES - 1; i > idx_start; i--) {
+        file_table[i] = file_table[i - 1];
     }
-    screen_print("6\n");
 
-    file_entry_t entries[ENTRIES_PER_SECTOR] = {};
-    filesystem_read_sectors(sector_start, entries, 512);
+    file_table[idx_start] = (file_entry_t){};
 
-    for (uint8_t i = 3; i > idx_start; i--) {
-        entries[i] = entries[i - 1];
-    }
-    entries[idx_start] = (file_entry_t){};
-
-    filesystem_write_sectors(sector_start, entries, 512);
+    filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
 }
 
-static void shift_file_entries_backward(uint32_t sector_start, uint8_t idx_start) {
-    if (idx_start > 0) {
-        uint8_t sector_buf[1024] = {};
-        filesystem_read_sectors(sector_start, sector_buf, 1024);
-
-        file_entry_t entries[ENTRIES_PER_SECTOR] = {};
-        file_entry_t next_entries[ENTRIES_PER_SECTOR] = {};
-        memcpy(entries, sector_buf, ENTRIES_PER_SECTOR);
-        memcpy(next_entries, &sector_buf[256], ENTRIES_PER_SECTOR);
-
-        for (uint8_t j = idx_start - 1; j < 3; j++) {
-            entries[j] = entries[j + 1];
-        }
-        entries[3] = next_entries[0];
-
-        filesystem_write_sectors(sector_start, entries, 512);
-    } else {
-        uint8_t sector_buf[512 * 3] = {};
-        filesystem_read_sectors(sector_start - 1, sector_buf, 512 * 3);
-
-        file_entry_t entries[ENTRIES_PER_SECTOR] = {};
-        file_entry_t next_entries[ENTRIES_PER_SECTOR] = {};
-        file_entry_t pre_entries[ENTRIES_PER_SECTOR] = {};
-        memcpy(entries, &sector_buf[256], ENTRIES_PER_SECTOR);
-        memcpy(next_entries, &sector_buf[512], ENTRIES_PER_SECTOR);
-        memcpy(pre_entries, sector_buf, ENTRIES_PER_SECTOR);
-
-        pre_entries[3] = entries[0];
-        for (uint8_t j = idx_start; j < 3; j++) {
-            entries[j] = entries[j + 1];
-        }
-        entries[3] = next_entries[0];
-
-        filesystem_write_sectors(sector_start, entries, 512);
+static void shift_file_entries_backward(file_entry_t* file_table, uint8_t idx_start) {
+    for (uint32_t i = max(idx_start - 1, 0); i < FILE_TABLE_ENTRIES - 1; i++) {
+        file_table[i] = file_table[i + 1];
     }
 
-    for (uint32_t i = sector_start + 1; i < FILE_TABLE_SECTORS; i++) {
-        uint8_t sector_buf[1024] = {};
-        filesystem_read_sectors(i, sector_buf, 1024);
+    file_table[FILE_TABLE_ENTRIES - 1] = (file_entry_t){};
 
-        file_entry_t entries[ENTRIES_PER_SECTOR] = {};
-        file_entry_t next_entries[ENTRIES_PER_SECTOR] = {};
-        memcpy(entries, sector_buf, ENTRIES_PER_SECTOR);
-        memcpy(next_entries, &sector_buf[256], ENTRIES_PER_SECTOR);
-
-        for (uint8_t j = 0; j < 3; j++) {
-            entries[j] = entries[j + 1];
-        }
-        entries[3] = next_entries[0];
-
-        filesystem_write_sectors(i, entries, 512);
-    }
-
-    file_entry_t entries[ENTRIES_PER_SECTOR] = {};
-    filesystem_read_sectors(FILE_TABLE_SECTORS, entries, 512);
-
-    for (uint8_t i = 0; i < 3; i++) {
-        entries[i] = entries[i + 1];
-    }
-    entries[3] = (file_entry_t){};
-
-    filesystem_write_sectors(FILE_TABLE_SECTORS, entries, 512);
+    filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
 }
 
 bool_t filesystem_write_file(const char* name, const uint8_t* data, size_t size) {
+    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+
     uint32_t file_start_sector = 0;
-    uint32_t file_entry_sector = 0;
     uint8_t file_entry_idx = 0;
-    screen_print("2");
-    if (find_space_for_file(size, &file_start_sector, &file_entry_sector, &file_entry_idx)) {
-        screen_print("3");
-        shift_file_entries_forward(file_entry_sector, file_entry_idx);
+    if (find_space_for_file(file_table, size, &file_start_sector, &file_entry_idx)) {
+        shift_file_entries_forward(file_table, file_entry_idx);
 
         file_entry_t new_file_entry = {};
         new_file_entry.magic_number = MAGIC_NUMBER;
         new_file_entry.start_sector = file_start_sector;
         new_file_entry.size = size;
-        memcpy(new_file_entry.name, name, strlen(name));
+        memcpy(new_file_entry.name, name, min(strlen(name), 52));
 
-        file_entry_t entries[512] = {};
-        filesystem_read_sectors(file_entry_sector, entries, 512);
-        entries[file_entry_idx] = new_file_entry;
-        filesystem_write_sectors(file_entry_sector, entries, 512);
+        file_table[file_entry_idx] = new_file_entry;
 
         filesystem_write_sectors(file_start_sector, data, size);
+        filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
+        free(file_table);
 
         return 1;
     }
+
     return 0;
+}
+
+void filesystem_print_all_entries() {
+    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+
+    screen_print("Printing All File Entries:\n");
+    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+        if (file_table[i].magic_number != MAGIC_NUMBER)
+            break;
+
+        char* id = num_to_str(i);
+        char* sector = num_to_str(file_table[i].start_sector);
+        char* size = num_to_str(file_table[i].size);
+        char* strs[] = { "Id: ", id, "\n", "Name: ", file_table[i].name, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
+        char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
+        screen_print(msg);
+        free(id);
+        free(sector);
+        free(size);
+        free(msg);
+    }
+    screen_print("------------------------------\n");
+
+    free(file_table);
 }
