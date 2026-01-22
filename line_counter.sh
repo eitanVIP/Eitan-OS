@@ -1,0 +1,1 @@
+find src -type f \( -name "*.c" -o -name "*.h" -o -name "*.S" \) | xargs wc -l

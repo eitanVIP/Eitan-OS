@@ -9,6 +9,7 @@
 
 // #define MAX_PROCESSES 100
 #define STACK_SIZE 16384
+#define STACKS_START 0x400000
 
 typedef struct {
     unsigned int gs;
@@ -64,11 +65,11 @@ void process_scheduler_init() {
     current_process->pid = 0;
     current_process->regs = (cpu_state_t){ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     current_process->pending_signals = 0;
-    current_process->stack_start = (void*)0x10401C;
+    current_process->stack_start = 0;
     current_process->next = current_process;
 
     stack_list = malloc(sizeof(stack_t));
-    stack_list->start = (void*)0x10401C;
+    stack_list->start = 0;
 }
 
 void process_scheduler_add_process(void* process_code_start) {
@@ -99,7 +100,7 @@ void process_scheduler_add_process(void* process_code_start) {
     if (!found) {
         previous_stack->next = malloc(sizeof(stack_t));
         previous_stack->next->free = 0;
-        previous_stack->next->start = (void*)((count + 1) * STACK_SIZE);
+        previous_stack->next->start = STACKS_START + (void*)(count * STACK_SIZE);
 
         new_process->stack_start = previous_stack->next->start;
     }

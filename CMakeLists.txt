@@ -36,7 +36,9 @@ add_custom_target(objs ALL DEPENDS ${OBJ_FILES})
 add_executable(fake_target ${SRC_FILES}
         src/filesystem.c
         src/filesystem.h
-        src/stdint.h)
+        src/stdint.h
+        src/program_loader.c
+        src/program_loader.h)
 
 # Pass the same compiler flags so CLion knows how to parse code
 target_compile_options(fake_target PRIVATE -m32 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib)
