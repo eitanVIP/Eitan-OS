@@ -226,7 +226,7 @@ void filesystem_init(void) {
     init_superblock();
 }
 
-bool_t filesystem_read_file(const char* name, uint8_t** data_ptr) {
+bool_t filesystem_read_file(const char* name, uint8_t** data_ptr, uint32_t* data_size) {
     file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
     filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
 
@@ -252,6 +252,7 @@ bool_t filesystem_read_file(const char* name, uint8_t** data_ptr) {
     uint8_t* data = malloc(file_entry.size);
     filesystem_read_sectors(file_entry.start_sector, data, file_entry.size);
     *data_ptr = data;
+    *data_size = file_entry.size;
 
     return 1;
 }
@@ -344,7 +345,8 @@ static void shift_file_entries_backward(file_entry_t* file_table, uint8_t idx_st
 
 bool_t filesystem_write_file(const char* name, const uint8_t* data, size_t size) {
     uint8_t* _;
-    if (filesystem_read_file(name, &_)) {
+    uint32_t _2;
+    if (filesystem_read_file(name, &_, &_2)) {
         filesystem_delete_file(name);
     }
 

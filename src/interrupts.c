@@ -6,7 +6,10 @@
 #include "io.h"
 #include "screen.h"
 #include "eitan_lib.h"
+#include "filesystem.h"
 #include "process_scheduler.h"
+#include "memory.h"
+#include "program_loader.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
@@ -20,6 +23,7 @@
 
 void exception_handler_c(unsigned int int_no);
 void irq_handler_c(unsigned int int_no, unsigned int* regs);
+void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3);
 
 extern void isr0();  extern void isr1();  extern void isr2();  extern void isr3();
 extern void isr4();  extern void isr5();  extern void isr6();  extern void isr7();
@@ -34,6 +38,8 @@ extern void irq0();  extern void irq1();  extern void irq2();  extern void irq3(
 extern void irq4();  extern void irq5();  extern void irq6();  extern void irq7();
 extern void irq8();  extern void irq9();  extern void irq10(); extern void irq11();
 extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15();
+
+extern void syscall_handler_asm();
 
 typedef struct {
     unsigned short    isr_low;      // The lower 16 bits of the ISR's address
@@ -125,6 +131,8 @@ void interrupts_init() {
     idt_set_descriptor(46, irq14, 0x8E);
     idt_set_descriptor(47, irq15, 0x8E);
 
+    idt_set_descriptor(0x80, syscall_handler_asm, 0xEE);
+
     lidt(idt, sizeof(idt) - 1);
 
     // PIC Remap
@@ -199,4 +207,66 @@ void irq_handler_c(unsigned int int_no, unsigned int* regs) {
     }
 
     send_eoi(irq);
+}
+
+void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3) {
+    switch (syscall_id) {
+        case 0: // Close process
+            break;
+
+        case 1: // Run program (arg1 pointer to name of file)
+            uint8_t* data1;
+            uint32_t data_size1;
+            if (filesystem_read_file((const char*)arg1, &data1, &data_size1)) {
+                program_loader_load_elf32(data1);
+            } else {
+                screen_println("Couldn't load file");
+            }
+            break;
+
+
+
+        case 10: // Malloc (arg1 size)
+            malloc(arg1);
+            break;
+
+        case 11: // Free (arg1 pointer)
+            free((void*)arg1);
+            break;
+
+
+
+        case 20: // Read keyboard char (arg1 pointer to put char)
+            *(uint16_t*)arg1 = io_keyboard_read();
+            break;
+
+
+
+        case 30: // Print string (arg1 pointer to string)
+            screen_print((const char*)arg1);
+            break;
+
+        case 31: // Clear screen
+            screen_clear_screen();
+            break;
+
+
+
+        case 40: // Read file (arg1 pointer to name of file, arg2 pointer to put pointer to heap data, arg3 size of data)
+            uint8_t* data2;
+            uint32_t data_size2;
+            if (filesystem_read_file((const char*)arg1, &data2, &data_size2)) {
+                *(uint8_t**)arg2 = data2;
+                *(uint8_t*)arg3 = data_size2;
+            } else {
+                screen_println("Couldn't load file");
+            }
+            break;
+
+        case 41: // Write file (arg1 pointer to name of file, arg2 pointer to data, arg3 size of data)
+            if (!filesystem_write_file((const char*)arg1, (const uint8_t*)arg2, arg3)) {
+                screen_println("Couldn't write file");
+            }
+            break;
+    }
 }

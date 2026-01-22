@@ -29,8 +29,8 @@ typedef struct {
     unsigned int eip;
     unsigned int cs;
     unsigned int eflags;
-    // unsigned int useresp;
-    // unsigned int ss;
+    unsigned int useresp;
+    unsigned int ss;
 } cpu_state_t;
 
 typedef struct process {
@@ -72,7 +72,7 @@ void process_scheduler_init() {
     stack_list->start = 0;
 }
 
-void process_scheduler_add_process(void* process_code_start) {
+void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
     asm volatile("cli");
 
     process_t* new_process = malloc(sizeof(process_t));
@@ -105,11 +105,18 @@ void process_scheduler_add_process(void* process_code_start) {
         new_process->stack_start = previous_stack->next->start;
     }
 
-    unsigned short kernel_code_segment = gdt_get_index(1, 0, 0);
-    unsigned short kernel_data_segment = gdt_get_index(2, 0, 0);
-    new_process->regs = (cpu_state_t){ kernel_data_segment, kernel_data_segment, kernel_data_segment, kernel_data_segment,
+    unsigned short code_segment;
+    unsigned short data_segment;
+    if (is_kernel_level) {
+        code_segment = gdt_get_index(1, 0, 0);
+        data_segment = gdt_get_index(2, 0, 0);
+    } else {
+        code_segment = gdt_get_index(3, 0, 3);
+        data_segment = gdt_get_index(4, 0, 3);
+    }
+    new_process->regs = (cpu_state_t){ data_segment, data_segment, data_segment, data_segment,
         0, 0, 0, (unsigned int)new_process->stack_start, 0, 0, 0, 0, (unsigned int)process_code_start,
-        kernel_code_segment, 1 << 1 | 1 << 9 /* bit1 = 1, bit9 = interrupt enabled = 1 */ };
+        code_segment, 1 << 1 | 1 << 9 /* bit1 = 1, bit9 = interrupt enabled = 1 */, (unsigned int)new_process->stack_start, data_segment };
 
     new_process->next = current_process->next;
     current_process->next = new_process;
@@ -134,8 +141,12 @@ void process_scheduler_next_process(unsigned int* current_regs) {
     current_process->regs.cs = current_regs[13];
     current_process->regs.eflags = current_regs[14];
 
-    // int nextPID = (current_process->pid + 1) % process_count;
-    // current_process = &processes[nextPID];
+    // ONLY save useresp and ss if we came from Ring 3
+    if ((current_regs[13] & 0x3) == 3) {
+        current_process->regs.useresp = current_regs[15];
+        current_process->regs.ss = current_regs[16];
+    }
+
     current_process = current_process->next;
 
     current_regs[0] = current_process->regs.gs;
@@ -153,4 +164,10 @@ void process_scheduler_next_process(unsigned int* current_regs) {
     current_regs[12] = current_process->regs.eip;
     current_regs[13] = current_process->regs.cs;
     current_regs[14] = current_process->regs.eflags;
+
+    // ONLY restore useresp and ss if we are GOING to Ring 3
+    if ((current_process->regs.cs & 0x3) == 3) {
+        current_regs[15] = current_process->regs.useresp;
+        current_regs[16] = current_process->regs.ss;
+    }
 }

@@ -110,7 +110,7 @@ bool_t program_loader_load_elf32(const uint8_t* file_data) {
 
     // void (*entry_point)(void) = (void (*)(void))header.entry;
     // entry_point();
-    process_scheduler_add_process((void*)header.entry);
+    process_scheduler_add_process((void*)header.entry, false);
 
     return true;
 }

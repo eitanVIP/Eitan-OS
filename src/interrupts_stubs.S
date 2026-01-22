@@ -4,6 +4,7 @@
 
 global setGdt
 global reloadSegments
+global flush_tss
 
 global isr0
 global isr1
@@ -55,8 +56,11 @@ global irq13
 global irq14
 global irq15
 
+global syscall_handler_asm
+
 extern exception_handler_c   ; void exception_handler_c(unsigned int int_no);
 extern irq_handler_c         ; void irq_handler_c(unsigned int int_no);
+extern syscall_handler_c
 
 ; ------------------------
 ; Exception stubs 0..31
@@ -69,7 +73,7 @@ isr%1:
     call exception_handler_c
     add esp, 4
     popa
-    iret
+    iretd
 %endmacro
 
 isr 0
@@ -133,7 +137,7 @@ irq%1:
     popad
 
     sti
-    iret
+    iretd
 %endmacro
 
 IRQ_STUB 0
@@ -176,3 +180,19 @@ reload_CS:
    MOV   GS, AX
    MOV   SS, AX
    RET
+
+flush_tss:
+    mov ax, (5 * 8) | 3
+    ltr ax
+    ret
+
+syscall_handler_asm:
+    push edx     ; Argument 3
+    push ecx     ; Argument 2
+    push ebx     ; Argument 1
+    push eax     ; Syscall ID
+
+    call syscall_handler_c
+
+    add esp, 16
+    iretd
