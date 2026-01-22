@@ -20,13 +20,13 @@ static block_t* free_list = (block_t*)HEAP_START;
 
 void memory_heap_init(void) {
     free_list->size = HEAP_END - HEAP_START;
-    free_list->next = NULL;
+    free_list->next = null;
 }
 
 void* malloc(size_t size) {
-    if (size == 0) return NULL;
+    if (size == 0) return null;
     size = ALIGN_UP(size + sizeof(block_t)); // include header
-    block_t* prev = NULL;
+    block_t* prev = null;
     block_t* curr = free_list;
 
     while (curr) {
@@ -50,7 +50,7 @@ void* malloc(size_t size) {
         prev = curr;
         curr = curr->next;
     }
-    return NULL; // out of memory
+    return null; // out of memory
 }
 
 void free(void* ptr) {
@@ -59,7 +59,7 @@ void free(void* ptr) {
     block_t* blk = (block_t*)((char*)ptr - sizeof(block_t));
 
     // Insert into sorted free list
-    block_t* prev = NULL;
+    block_t* prev = null;
     block_t* curr = free_list;
 
     while (curr && curr < blk) {

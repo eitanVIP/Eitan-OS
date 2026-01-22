@@ -159,7 +159,7 @@ char* str_concat(const char* s1, const char* s2) {
 
     // Allocate space for both strings + null terminator
     char* result = malloc(len1 + len2 + 1);
-    if (!result) return NULL; // handle malloc failure
+    if (!result) return null; // handle malloc failure
 
     // Copy first string
     for (int i = 0; i < len1; i++)

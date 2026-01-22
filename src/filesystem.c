@@ -226,7 +226,7 @@ void filesystem_init(void) {
     init_superblock();
 }
 
-bool_t filesystem_read_file(char* name, uint8_t** data_ptr) {
+bool_t filesystem_read_file(const char* name, uint8_t** data_ptr) {
     file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
     filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
 
@@ -343,6 +343,11 @@ static void shift_file_entries_backward(file_entry_t* file_table, uint8_t idx_st
 }
 
 bool_t filesystem_write_file(const char* name, const uint8_t* data, size_t size) {
+    uint8_t* _;
+    if (filesystem_read_file(name, &_)) {
+        filesystem_delete_file(name);
+    }
+
     file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
     filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
 
@@ -367,6 +372,37 @@ bool_t filesystem_write_file(const char* name, const uint8_t* data, size_t size)
     }
 
     return 0;
+}
+
+bool_t filesystem_delete_file(const char* name) {
+    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+
+    file_entry_t file_entry = (file_entry_t){};
+    int file_entry_idx = 0;
+    bool_t found = 0;
+
+    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+        file_entry = file_table[i];
+        if (file_entry.magic_number != MAGIC_NUMBER)
+            continue;
+
+        if (strcmp(file_entry.name, name)) {
+            file_entry_idx = i;
+            found = 1;
+            break;
+        }
+    }
+
+    free(file_table);
+
+    if (!found)
+        return 0;
+
+    file_table[file_entry_idx] = (file_entry_t){};
+    shift_file_entries_backward(file_table, file_entry_idx + 1);
+
+    return 1;
 }
 
 void filesystem_print_all_entries() {

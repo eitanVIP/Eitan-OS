@@ -91,11 +91,6 @@ void kernel_main(void) {
 
     filesystem_init();
 
-    // filesystem_write_sectors(30, "SIGMA", 6);
-    // char data[6];
-    // filesystem_read_sectors(30, data, 6);
-    // screen_print(data);
-
     // for (int i = 0; i < 10; i++) {
     //     char* name = num_to_str(i * 100);
     //     filesystem_write_file(name, name, strlen(name) + 1);
@@ -105,19 +100,13 @@ void kernel_main(void) {
     // filesystem_read_file("SIGMA", &data_ptr);
     // screen_print(data_ptr);
     // free(data_ptr);
-    // filesystem_print_all_entries();
+    filesystem_print_all_entries();
+    uint8_t* data_ptr;
+    filesystem_read_file("SIGMA", &data_ptr);
+    screen_println(data_ptr);
+    free(data_ptr);
 
-    // const char* test[] = { "1, ", "2, ", "3, ", "4, ", "5, ", "6, ", "7\n" };
-    // const char* msg = str_concats(test, sizeof(test) / sizeof(test[0]));
-    // screen_print(msg);
-    // memory_print_blocks();
-
-    for (int i = 0; i < 40; i++) {
-        char* name = num_to_str(i * 100);
-        screen_println(name);
-        free(name);
-    }
-
+    int i = 0;
     while (1) {
         uint16_t scancode = io_keyboard_read();
         if (io_is_character(scancode)) {
@@ -131,6 +120,18 @@ void kernel_main(void) {
 
                 case 0x50: // Arrow Down
                     screen_scroll(screen_get_scroll() + 1);
+                    break;
+
+                case 0x58: // F12
+                    char* data = num_to_str(i * 100);
+                    filesystem_write_file("SIGMA", data, strlen(data) + 1);
+                    filesystem_print_all_entries();
+                    uint8_t* data_ptr;
+                    filesystem_read_file("SIGMA", &data_ptr);
+                    screen_println(data_ptr);
+                    free(data_ptr);
+                    free(data);
+                    i++;
                     break;
 
                 default:

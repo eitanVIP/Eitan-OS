@@ -5,7 +5,9 @@
 #ifndef STDINT_H
 #define STDINT_H
 
-#define NULL 0
+#define null 0
+#define true 1
+#define false 0
 
 typedef char int8_t;
 typedef short int16_t;
