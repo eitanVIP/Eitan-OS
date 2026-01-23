@@ -1,1 +1,5 @@
 build/
+.idea/
+.gdb_history
+cmake-build-debug/
+programs/build/

@@ -187,6 +187,7 @@ flush_tss:
     ret
 
 syscall_handler_asm:
+    cli
     push edx     ; Argument 3
     push ecx     ; Argument 2
     push ebx     ; Argument 1
@@ -195,4 +196,5 @@ syscall_handler_asm:
     call syscall_handler_c
 
     add esp, 16
+    sti
     iretd

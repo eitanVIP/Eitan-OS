@@ -27,7 +27,8 @@ struct tss_entry {
 
 unsigned char gdt[6 * 8] __attribute__((aligned(8)));
 static struct tss_entry kernel_tss;
-uint8_t syscall_stack[16384];
+uint8_t safe_transition_stack[16384];
+// uint8_t* safe_transition_stack = (uint8_t*)0x10000000;
 
 void encode_gdt_entry(unsigned char *target, struct GDT source) {
     // Check the limit to make sure that it can be encoded
@@ -68,7 +69,7 @@ void gdt_init() {
     // Initialize TSS
     memset(&kernel_tss, 0, sizeof(kernel_tss));
     kernel_tss.ss0 = 0x10; // Kernel Data Segment
-    kernel_tss.esp0 = (uint32_t)&syscall_stack[16383];
+    kernel_tss.esp0 = (uint32_t)&safe_transition_stack[16383];
 
     // Load the GDT
     setGdt(6 * 8 - 1, (unsigned int) gdt);

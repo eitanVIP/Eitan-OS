@@ -268,5 +268,8 @@ void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int 
                 screen_println("Couldn't write file");
             }
             break;
+
+        default:
+            break;
     }
 }

@@ -10,14 +10,13 @@ global _start
 _start:
     mov eax, 30
     mov ebx, msg
-    ; int 0x80
+    int 0x80
 
     mov ecx, 0              ; Counter starts at 0
 .loop:
     add ecx, 1              ; Increment
-    cmp ecx, 1000000000     ; Compare to 1 Billion
+    cmp ecx, 3
     jl .loop                ; If less, loop again
 
-    ; Once done, we have a problem: no exit() syscall yet!
-    ; For now, just halt so the CPU doesn't run into garbage memory.
-    hlt
+.looo:
+    jmp .looo
