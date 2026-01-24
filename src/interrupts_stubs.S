@@ -117,7 +117,7 @@ isr 31
 %define IRQ %1
 %assign VEC 32 + IRQ
 irq%1:
-    cli
+    ;cli
 
     pushad
     push ds
@@ -136,7 +136,7 @@ irq%1:
     pop ds
     popad
 
-    sti
+    ;sti
     iretd
 %endmacro
 
@@ -187,7 +187,14 @@ flush_tss:
     ret
 
 syscall_handler_asm:
-    cli
+    ;cli
+
+    pushad
+    push ds
+    push es
+    push fs
+    push gs
+
     push edx     ; Argument 3
     push ecx     ; Argument 2
     push ebx     ; Argument 1
@@ -196,5 +203,12 @@ syscall_handler_asm:
     call syscall_handler_c
 
     add esp, 16
-    sti
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popad
+
+    ;sti
     iretd

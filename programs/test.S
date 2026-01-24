@@ -12,11 +12,10 @@ _start:
     mov ebx, msg
     int 0x80
 
-    mov ecx, 0              ; Counter starts at 0
+    mov ecx, 0
 .loop:
-    add ecx, 1              ; Increment
-    cmp ecx, 3
-    jl .loop                ; If less, loop again
-
-.looo:
-    jmp .looo
+    add ecx, 1
+    cmp ecx, 1000000000
+    jl .loop
+    jmp _start
+    ;jmp .loop

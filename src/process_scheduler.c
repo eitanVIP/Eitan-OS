@@ -6,6 +6,7 @@
 
 #include "gdt.h"
 #include "memory.h"
+#include "screen.h"
 
 // #define MAX_PROCESSES 100
 #define STACK_SIZE 16384
