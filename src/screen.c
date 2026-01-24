@@ -89,19 +89,6 @@ void screen_print(const char* msg) {
     memcpy(&buffer[buffer_end], msg, size);
     buffer_end += size;
 
-    // for (int i = 0; i < size; i++) {
-    //     if (msg[i] == '\n') {
-    //         int buffer_start = buffer_end;
-    //         buffer_end = ceil((double)buffer_end / (VGA_WIDTH - 1)) * VGA_WIDTH;
-    //
-    //         for(int j = buffer_start; j < buffer_end; j++) {
-    //             buffer[i] = 0;
-    //         }
-    //     } else {
-    //         buffer[buffer_end++] = msg[i];
-    //     }
-    // }
-
     screen_flush();
 }
 
@@ -109,6 +96,60 @@ void screen_println(const char* msg) {
     char* new_msg = str_concat(msg, "\n");
     screen_print(new_msg);
     free(new_msg);
+}
+
+void screen_print_num(double num) {
+    char* msg = num_to_str(num);
+    screen_print(msg);
+    free(msg);
+}
+
+void screen_println_num(double num) {
+    char* msg = num_to_str(num);
+    screen_println(msg);
+    free(msg);
+}
+
+void screen_print_arr(const char** msgs, int count) {
+    char* msg = str_concats(msgs, count);
+    screen_print(msg);
+    free(msg);
+}
+
+void screen_println_arr(const char** msgs, int count) {
+    char* msg = str_concats(msgs, count);
+    screen_println(msg);
+    free(msg);
+}
+
+void screen_print_arr_num(const double* nums, int count) {
+    char* msgs[count];
+    for (int i = 0; i < count; i++) {
+        msgs[i] = num_to_str(nums[i]);
+    }
+
+    char* msg = str_concats(msgs, count);
+    screen_print(msg);
+
+    free(msg);
+    for (int i = 0; i < count; i++) {
+        free(msgs[i]);
+    }
+}
+
+void screen_println_arr_num(const double* nums, int count) {
+    char* msgs[count];
+    for (int i = 0; i < count; i++) {
+        msgs[i] = num_to_str(nums[i]);
+    }
+
+    char* msg = str_concats(msgs, count);
+    screen_println(msg);
+
+    free(msg);
+    for (int i = 0; i < count; i++) {
+        free(msgs[i]);
+    }
 }
 
 void screen_scroll(int to) {

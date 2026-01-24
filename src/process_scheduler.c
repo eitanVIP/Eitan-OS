@@ -8,9 +8,8 @@
 #include "memory.h"
 #include "screen.h"
 
-// #define MAX_PROCESSES 100
 #define STACK_SIZE 16384
-#define STACKS_START 0x400000
+#define STACKS_START 0x1000000
 
 typedef struct {
     unsigned int gs;
@@ -49,19 +48,11 @@ typedef struct stack {
     struct stack *next;
 } stack_t;
 
-// static process_t processes[MAX_PROCESSES];
-// static int process_count = 1;
 static int highest_pid = 0;
 static process_t* current_process;
 static stack_t* stack_list;
 
 void process_scheduler_init() {
-    // processes[0] = (process_t) {
-    //     0,
-    //     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    //     0
-    // };
-    // current_process = &processes[0];
     current_process = malloc(sizeof(process_t));
     current_process->pid = 0;
     current_process->regs = (cpu_state_t){ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -71,6 +62,8 @@ void process_scheduler_init() {
 
     stack_list = malloc(sizeof(stack_t));
     stack_list->start = 0;
+    stack_list->free = 0;
+    stack_list->next = null;
 }
 
 void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
@@ -126,6 +119,16 @@ void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_le
 }
 
 void process_scheduler_next_process(unsigned int* current_regs) {
+    if ((current_regs[13] & 0x3) != 3) {
+        if (current_regs[12] > 0x500000) {
+            screen_println("SAVING USER EIP TO KERNEL");
+            screen_println_num((double)(uint64_t)current_process->next);
+            screen_println_num((double)(uint64_t)current_process);
+            // screen_println_num((double)(current_process->regs.eip));
+            // screen_println_num((double)(current_process->next->regs.eip));
+        }
+    }
+
     current_process->regs.gs = current_regs[0];
     current_process->regs.fs = current_regs[1];
     current_process->regs.es = current_regs[2];
@@ -170,5 +173,13 @@ void process_scheduler_next_process(unsigned int* current_regs) {
     if ((current_process->regs.cs & 0x3) == 3) {
         current_regs[15] = current_process->regs.useresp;
         current_regs[16] = current_process->regs.ss;
+    } else {
+        if (current_process->regs.eip > 0x500000) {
+            screen_println("KERNEL RUNNING USER EIP");
+            screen_println_num((double)(uint64_t)current_process);
+            screen_println_num((double)(uint64_t)current_process->next);
+            screen_println_num((double)(current_process->regs.eip));
+            screen_println_num((double)(current_process->next->regs.eip));
+        }
     }
 }

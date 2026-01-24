@@ -9,7 +9,7 @@
 #include "memory.h"
 #include "process_scheduler.h"
 
-#define PROCESS_MEMORY_START 0x500000
+#define PROCESS_MEMORY_START 0x2000000
 
 typedef struct {
     uint32_t magic_number;

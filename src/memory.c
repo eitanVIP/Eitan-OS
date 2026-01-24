@@ -6,8 +6,8 @@
 #include "eitan_lib.h"
 #include "screen.h"
 
-#define HEAP_START 0x200000
-#define HEAP_END   0x400000
+#define HEAP_START 0x500000
+#define HEAP_END   0x1000000
 #define ALIGN 8
 #define ALIGN_UP(x) (((x) + (ALIGN-1)) & ~(ALIGN-1))
 
