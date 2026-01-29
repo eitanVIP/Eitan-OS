@@ -1,1 +1,1 @@
-gdb build/kernel.elf -ex "set disassembly-flavor intel" -ex 'target remote localhost:1234' -ex 'b kernel_main' -ex 'c'
+gdb build/kernel.elf -ex "set disassembly-flavor intel" -ex 'target remote localhost:1234' -ex 'b kernel_main' -ex 'c' #-ex 'b irq0.test_somewhere' -ex 'b irq0.interrupts_ona' -ex 'b syscall_handler_asm.interrupts_onb'

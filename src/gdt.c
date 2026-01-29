@@ -27,8 +27,7 @@ struct tss_entry {
 
 unsigned char gdt[6 * 8] __attribute__((aligned(8)));
 static struct tss_entry kernel_tss;
-uint8_t safe_transition_stack[16384];
-// uint8_t* safe_transition_stack = (uint8_t*)0x10000000;
+volatile uint8_t safe_transition_stack[16384] __attribute__((aligned(16)));
 
 void encode_gdt_entry(unsigned char *target, struct GDT source) {
     // Check the limit to make sure that it can be encoded

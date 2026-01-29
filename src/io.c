@@ -60,7 +60,7 @@ uint16_t io_keyboard_read() {
 }
 
 bool_t io_is_character(uint16_t scancode) {
-    return scancode >> 8 == SCAN_SPECIAL_PREFIX;
+    return scancode >> 8 != SCAN_SPECIAL_PREFIX;
 }
 
 char io_scancode_to_character(uint16_t scancode) {

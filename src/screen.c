@@ -20,6 +20,9 @@ int scroll = 0;
 int buffer_end = 0;
 
 void screen_put_char(char c, int x, int y) {
+    if (cursor_y >= VGA_HEIGHT || cursor_x >= VGA_WIDTH)
+        return;
+
     VGA[y * VGA_WIDTH + x] = 0x0F00 | c;
 }
 

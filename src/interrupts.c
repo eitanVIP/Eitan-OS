@@ -73,6 +73,54 @@ static inline void lidt(void* base, unsigned short size) {
 }
 
 void interrupts_init() {
+    // 1. PIC Remap Sequence
+    // ---------------------------------------------------------
+    // Starts the initialization sequence (ICW1)
+    io_outb(0x20, 0x11);
+    io_outb(0xA0, 0x11);
+
+    // Set vector offsets (ICW2)
+    io_outb(0x21, 0x20); // Master: 0x20-0x27 (32-39)
+    io_outb(0xA1, 0x28); // Slave:  0x28-0x2F (40-47)
+
+    // Tell Master PIC about Slave at IRQ2 (ICW3)
+    io_outb(0x21, 0x04);
+    // Tell Slave PIC its cascade identity (ICW3)
+    io_outb(0xA1, 0x02);
+
+    // Set PICs to 8086 mode (ICW4)
+    io_outb(0x21, 0x01);
+    io_outb(0xA1, 0x01);
+
+    // 2. Explicit Masking (The "Safe Guard")
+    // ---------------------------------------------------------
+    // We mask everything by default to prevent random hardware noise
+    // from jumping to uninitialized handlers.
+
+    uint8_t master_mask = 0xFF; // Start with all bits 1 (masked)
+    uint8_t slave_mask  = 0xFF;
+
+    // UNMASK IRQ0 (Timer): Bit 0
+    master_mask &= ~(1 << 0);
+
+    // UNMASK IRQ2 (Cascade): Bit 2
+    // Must be unmasked for any Slave PIC interrupts (8-15) to work.
+    master_mask &= ~(1 << 2);
+
+    // MASK IRQ1 (Keyboard): Bit 1
+    // We ensure this is 1 so your polling loop can read Port 0x60 in peace.
+    master_mask |= (1 << 1);
+
+    io_outb(0x21, master_mask);
+    io_outb(0xA1, slave_mask);
+
+    // 3. PIT Setup (100Hz)
+    // ---------------------------------------------------------
+    unsigned short divisor = PIT_FREQ / 100;
+    io_outb(PIT_COMMAND, 0x36);             // Command port
+    io_outb(PIT_CHANNEL0, divisor & 0xFF);   // Low byte
+    io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF); // High byte
+
     // IDT
     for (int i = 0; i < 256; ++i) {
         idt_set_descriptor((unsigned char)i, isr0, 0x8E);
@@ -135,41 +183,41 @@ void interrupts_init() {
 
     lidt(idt, sizeof(idt) - 1);
 
-    // PIC Remap
-    unsigned char a1, a2;
-    // Save masks
-    a1 = io_inb(0x21);
-    a2 = io_inb(0xA1);
-    // Starts the initialization sequence (in cascade mode)
-    io_outb(0x20, 0x11);
-    io_outb(0xA0, 0x11);
-    // Set vector offsets
-    io_outb(0x21, 0x20); // Master PIC vector offset: 32-39
-    io_outb(0xA1, 0x28); // Slave PIC vector offset: 40-47
-    // Tell Master PIC about the Slave PIC at IRQ2 (0000 0100)
-    io_outb(0x21, 4);
-    // Tell Slave PIC its cascade identity (0000 0010)
-    io_outb(0xA1, 2);
-    // Set PICs to 8086/88 mode
-    io_outb(0x21, 0x01);
-    io_outb(0xA1, 0x01);
-    // Restore saved masks
-    io_outb(0x21, a1);
-    io_outb(0xA1, a2);
-
-    // Unmask IRQ0 on master PIC so PIT ticks get through
-    {
-        unsigned char mask = io_inb(PIC1_DATA);
-        mask &= ~(1 << 0); /* clear bit 0 */
-        io_outb(PIC1_DATA, mask);
-    }
-
-    // PIT
-    unsigned short divisor = PIT_FREQ / 100; // 100Hz
-    // 0b00110110: channel 0, low/high byte, mode 3 (square wave)
-    io_outb(PIT_COMMAND, 0b00110110);
-    io_outb(PIT_CHANNEL0, divisor & 0xFF);       // low byte
-    io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF);// high byte
+    // // PIC Remap
+    // unsigned char a1, a2;
+    // // Save masks
+    // a1 = io_inb(0x21);
+    // a2 = io_inb(0xA1);
+    // // Starts the initialization sequence (in cascade mode)
+    // io_outb(0x20, 0x11);
+    // io_outb(0xA0, 0x11);
+    // // Set vector offsets
+    // io_outb(0x21, 0x20); // Master PIC vector offset: 32-39
+    // io_outb(0xA1, 0x28); // Slave PIC vector offset: 40-47
+    // // Tell Master PIC about the Slave PIC at IRQ2 (0000 0100)
+    // io_outb(0x21, 4);
+    // // Tell Slave PIC its cascade identity (0000 0010)
+    // io_outb(0xA1, 2);
+    // // Set PICs to 8086/88 mode
+    // io_outb(0x21, 0x01);
+    // io_outb(0xA1, 0x01);
+    // // Restore saved masks
+    // io_outb(0x21, a1);
+    // io_outb(0xA1, a2);
+    //
+    // // Unmask IRQ0 on master PIC so PIT ticks get through
+    // {
+    //     unsigned char mask = io_inb(PIC1_DATA);
+    //     mask &= ~(1 << 0); /* clear bit 0 */
+    //     io_outb(PIC1_DATA, mask);
+    // }
+    //
+    // // PIT
+    // unsigned short divisor = PIT_FREQ / 100; // 100Hz
+    // // 0b00110110: channel 0, low/high byte, mode 3 (square wave)
+    // io_outb(PIT_COMMAND, 0b00110110);
+    // io_outb(PIT_CHANNEL0, divisor & 0xFF);       // low byte
+    // io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF);// high byte
 
     // Enable interrupts
     asm volatile("sti");
