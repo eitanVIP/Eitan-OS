@@ -68,7 +68,7 @@ void gdt_init() {
     // Initialize TSS
     memset(&kernel_tss, 0, sizeof(kernel_tss));
     kernel_tss.ss0 = 0x10; // Kernel Data Segment
-    kernel_tss.esp0 = (uint32_t)&safe_transition_stack[16383];
+    kernel_tss.esp0 = (uint32_t)&safe_transition_stack[16384];
 
     // Load the GDT
     setGdt(6 * 8 - 1, (unsigned int) gdt);

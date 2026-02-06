@@ -21,7 +21,7 @@
 #define PIC2_DATA    0xA1
 #define PIC_EOI      0x20
 
-void exception_handler_c(unsigned int int_no);
+void exception_handler_c(unsigned int int_no, unsigned int* regs);
 void irq_handler_c(unsigned int int_no, unsigned int* regs);
 void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3);
 
@@ -232,9 +232,35 @@ void send_eoi(unsigned int irq_number) {
     io_outb(PIC1_COMMAND, PIC_EOI); // Send EOI to Master PIC
 }
 
-void exception_handler_c(unsigned int int_no) {
-    char* msg = str_concat("CPU Exception: ", num_to_str(int_no));
-    screen_print(msg);
+void exception_handler_c(unsigned int int_no, unsigned int* regs) {
+    screen_print("CPU Exception: ");
+    screen_println_num(int_no);
+
+    screen_print("GS: ");      screen_println_num(regs[0]);
+    screen_print("FS: ");      screen_println_num(regs[1]);
+    screen_print("ES: ");      screen_println_num(regs[2]);
+    screen_print("DS: ");      screen_println_num(regs[3]);
+
+    screen_print("EDI: ");     screen_println_num(regs[4]);
+    screen_print("ESI: ");     screen_println_num(regs[5]);
+    screen_print("EBP: ");     screen_println_num(regs[6]);
+    screen_print("ESP: ");     screen_println_num(regs[7]);
+    screen_print("EBX: ");     screen_println_num(regs[8]);
+    screen_print("EDX: ");     screen_println_num(regs[9]);
+    screen_print("ECX: ");     screen_println_num(regs[10]);
+    screen_print("EAX: ");     screen_println_num(regs[11]);
+
+    // The Exception Frame
+    screen_print("Error: ");   screen_println_num(regs[12]);
+    screen_print("EIP: ");     screen_println_num(regs[13]);
+    screen_print("CS: ");      screen_println_num(regs[14]);
+    screen_print("EFLAGS: ");  screen_println_num(regs[15]);
+
+    // Only valid if the exception came from User Mode (Ring 3)
+    if ((regs[14] & 0x3) == 3) {
+        screen_print("User ESP: "); screen_println_num(regs[16]);
+        screen_print("SS: ");       screen_println_num(regs[17]);
+    }
 
     while (1) {
         asm volatile("hlt");

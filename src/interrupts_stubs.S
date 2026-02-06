@@ -69,11 +69,22 @@ extern safe_transition_stack
 %macro isr 1
 %define VEC %1
 isr%1:
-    pusha
+    pushad
+    push ds
+    push es
+    push fs
+    push gs
+
+    push esp
     push dword VEC
     call exception_handler_c
-    add esp, 4
-    popa
+    add esp, 8
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popad
     iretd
 %endmacro
 
@@ -124,89 +135,105 @@ irq%1:
     push fs
     push gs
 
-    ; 1. Check if CS (at esp + 52) & 0x03 != 3
+; 1. Check if CS (at esp + 52) & 0x03 != 3
     mov ax, [esp + 52]
     and ax, 0x03
     cmp ax, 3
-    je .skip_jump
+    je .skip_irq_test
 
-    ; 2. Check if EIP (at esp + 48) > 0x500000
+; 2. Check if EIP (at esp + 48) > 0x500000
     mov eax, [esp + 48]
     cmp eax, 0x500000
-    jbe .skip_jump
+    jbe .skip_irq_test
 
-    .irq_test:
-    jmp .skip_jump
+.irq_test:
+    jmp .skip_irq_test
 
-    .skip_jump:
+.skip_irq_test:
     mov ax, [esp + 52]
     and ax, 0x03
     cmp ax, 3
     je .not_from_kernel
 
-    ; Manual Stack Copying using EAX as a buffer
-    ; mov eax, [esp + 64]
+.from_kernel
+
+; Copying stack to safe_transition_stack
+    ; mov eax, [esp + 64] ; SS
     mov eax, 0
-    mov [safe_transition_stack + 16383], eax
-    ; mov eax, [esp + 60]
+    mov [safe_transition_stack + 16380], eax
+    ; mov eax, [esp + 60] ; userESP
     mov eax, 0
-    mov [safe_transition_stack + 16379], eax
-    mov eax, [esp + 56]
-    mov [safe_transition_stack + 16375], eax
-    mov eax, [esp + 52]
-    mov [safe_transition_stack + 16371], eax
-    mov eax, [esp + 48]
-    mov [safe_transition_stack + 16367], eax
-    mov eax, [esp + 44]
-    mov [safe_transition_stack + 16363], eax
-    mov eax, [esp + 40]
-    mov [safe_transition_stack + 16359], eax
-    mov eax, [esp + 36]
-    mov [safe_transition_stack + 16355], eax
-    mov eax, [esp + 32]
-    mov [safe_transition_stack + 16351], eax
-    mov eax, [esp + 28]
-    mov [safe_transition_stack + 16347], eax
-    mov eax, [esp + 24]
-    mov [safe_transition_stack + 16343], eax
-    mov eax, [esp + 20]
-    mov [safe_transition_stack + 16339], eax
-    mov eax, [esp + 16]
-    mov [safe_transition_stack + 16335], eax
-    mov eax, [esp + 12]
-    mov [safe_transition_stack + 16331], eax
-    mov eax, [esp + 8]
-    mov [safe_transition_stack + 16327], eax
-    mov eax, [esp + 4]
-    mov [safe_transition_stack + 16323], eax
-    mov eax, [esp]
-    mov [safe_transition_stack + 16319], eax
+    mov [safe_transition_stack + 16376], eax
+    mov eax, [esp + 56] ; EFLAGS
+    mov [safe_transition_stack + 16372], eax
+    mov eax, [esp + 52] ; CS
+    mov [safe_transition_stack + 16368], eax
+    mov eax, [esp + 48] ; EIP
+    mov [safe_transition_stack + 16364], eax
+    mov eax, [esp + 44] ; EAX
+    mov [safe_transition_stack + 16360], eax
+    mov eax, [esp + 40] ; ECX
+    mov [safe_transition_stack + 16356], eax
+    mov eax, [esp + 36] ; EDX
+    mov [safe_transition_stack + 16352], eax
+    mov eax, [esp + 32] ; EBX
+    mov [safe_transition_stack + 16348], eax
+    mov eax, [esp + 28] ; ESP
+    mov [safe_transition_stack + 16344], eax
+    mov eax, [esp + 24] ; EBP
+    mov [safe_transition_stack + 16340], eax
+    mov eax, [esp + 20] ; ESI
+    mov [safe_transition_stack + 16336], eax
+    mov eax, [esp + 16] ; EDI
+    mov [safe_transition_stack + 16332], eax
+    mov eax, [esp + 12] ; DS
+    mov [safe_transition_stack + 16328], eax
+    mov eax, [esp + 8]  ; ES
+    mov [safe_transition_stack + 16324], eax
+    mov eax, [esp + 4]  ; FS
+    mov [safe_transition_stack + 16320], eax
+    mov eax, [esp]      ; GS
+    mov [safe_transition_stack + 16316], eax
 
-    ; Switch stack pointer
-    mov esp, safe_transition_stack + 16319
+; Switch stack pointer to safe_transition_stack
+    mov esp, safe_transition_stack + 16316
 
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
+; Save kernel esp to clean up stack later
+    mov eax, [esp+28]
+    mov [safe_transition_stack], eax
 
+    mov eax, 0x10
+    mov ds, eax
+    mov es, eax
+    mov fs, eax
+    mov gs, eax
+
+; C handler call
     push esp
     push dword VEC
     call irq_handler_c
     add esp, 8
 
-    ; Save ESP to return later. Put there eip, eflags, cs
-    mov eax, [esp+28]
-    mov [safe_transition_stack + 16315], eax
-    mov ebx, [safe_transition_stack + 16367]
-    sub eax, 12
+; 1. Check if CS (at esp + 52) & 0x03 == 3
+    mov ax, [esp + 52]
+    and ax, 0x03
+    cmp ax, 3
+    je .to_user
+
+.to_kernel:
+
+; Move new eip, cs and eflags to kernel stack to iretd from there in order to clean its stack
+    mov eax, [safe_transition_stack] ; Saved kernel esp
+
+    mov ebx, [safe_transition_stack + 16364] ; New EIP
     mov [eax], ebx
-    mov ebx, [safe_transition_stack + 16371]
     add eax, 4
+
+    mov ebx, [safe_transition_stack + 16368] ; New CS
     mov [eax], ebx
-    mov ebx, [safe_transition_stack + 16375]
     add eax, 4
+
+    mov ebx, [safe_transition_stack + 16372] ; New EFLAGS
     mov [eax], ebx
 
     pop gs
@@ -215,20 +242,53 @@ irq%1:
     pop ds
     popad
 
-    ; Restore stack pointer
-    mov esp, [safe_transition_stack + 16315]
-    sub esp, 12
+    mov esp, [safe_transition_stack] ; Kernel esp
+    iretd
+
+.to_user:
+
+; Move new eip, cs, eflags, useresp and ss to kernel stack to iretd from there in order to clean its stack
+    mov eax, [safe_transition_stack] ; Saved kernel esp
+    sub eax, 8
+
+    mov ebx, [safe_transition_stack + 16364] ; New EIP
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [safe_transition_stack + 16368] ; New CS
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [safe_transition_stack + 16372] ; New EFLAGS
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [safe_transition_stack + 16376] ; New userESP
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [safe_transition_stack + 16380] ; New SS
+    mov [eax], ebx
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popad
+
+    mov esp, [safe_transition_stack] ; Kernel esp
+    sub esp, 8 ; Move 2 cells because transition to user has 2 more values
     iretd
 
 .not_from_kernel:
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
+    mov eax, 0x10
+    mov ds, eax
+    mov es, eax
+    mov fs, eax
+    mov gs, eax
 
     push esp
-    push dword %1
+    push dword VEC
     call irq_handler_c
     add esp, 8
 
@@ -287,35 +347,24 @@ flush_tss:
     ret
 
 syscall_handler_asm:
-    ;cli
-
     pushad
     push ds
     push es
     push fs
     push gs
 
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
+    mov eax, 0x10
+    mov ds, eax
+    mov es, eax
+    mov fs, eax
+    mov gs, eax
+
+    mov eax, [esp+44]
 
     push edx     ; Argument 3
     push ecx     ; Argument 2
     push ebx     ; Argument 1
     push eax     ; Syscall ID
-
-    ;pushfd              ; Push EFLAGS (32-bit) onto the stack
-    ;pop eax             ; Pop them into EAX
-    ;test eax, 0x200     ; Bit 9 is the Interrupt Flag (0x200)
-    ;jnz .interrupts_onb  ; Jump if IF is 1
-    ;jz .interrupts_offb ; Jump if IF is 0
-
-    ;.interrupts_onb:
-    ;jmp .interrupts_offb
-
-    ;.interrupts_offb:
 
     call syscall_handler_c
 
@@ -327,5 +376,4 @@ syscall_handler_asm:
     pop ds
     popad
 
-    ;sti
     iretd
