@@ -121,9 +121,12 @@ void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_le
 void process_scheduler_next_process(unsigned int* current_regs) {
     if ((current_regs[13] & 0x3) != 3) {
         if (current_regs[12] > 0x500000) {
-            screen_println("SAVING USER EIP TO KERNEL");
-            screen_println_num((double)(uint64_t)current_process->next);
-            screen_println_num((double)(uint64_t)current_process);
+            screen_println("SAVING WEIRD EIP TO KERNEL");
+            screen_println_num((double)(uint64_t)current_process->next->regs.eip);
+            screen_println_num((double)(uint64_t)current_process->regs.eip);
+            screen_println_num((double)(current_regs[12]));
+
+            asm volatile("hlt");
         }
     }
 
@@ -178,11 +181,13 @@ void process_scheduler_next_process(unsigned int* current_regs) {
         current_regs[15] = 0;
         current_regs[16] = 0;
         if (current_process->regs.eip > 0x500000) {
-            screen_println("KERNEL RUNNING USER EIP");
+            screen_println("KERNEL RUNNING WEIRD EIP");
             screen_println_num((double)(uint64_t)current_process);
             screen_println_num((double)(uint64_t)current_process->next);
             screen_println_num((double)(current_process->regs.eip));
             screen_println_num((double)(current_process->next->regs.eip));
+
+            asm volatile("hlt");
         }
     }
 }

@@ -135,25 +135,11 @@ irq%1:
     push fs
     push gs
 
-; 1. Check if CS (at esp + 52) & 0x03 != 3
+; Check if came from user
     mov ax, [esp + 52]
     and ax, 0x03
     cmp ax, 3
-    je .skip_irq_test
-
-; 2. Check if EIP (at esp + 48) > 0x500000
-    mov eax, [esp + 48]
-    cmp eax, 0x500000
-    jbe .skip_irq_test
-
-.irq_test:
-    jmp .skip_irq_test
-
-.skip_irq_test:
-    mov ax, [esp + 52]
-    and ax, 0x03
-    cmp ax, 3
-    je .not_from_kernel
+    je .from_user
 
 .from_kernel
 
@@ -201,6 +187,8 @@ irq%1:
 ; Save kernel esp to clean up stack later
     mov eax, [esp+28]
     mov [safe_transition_stack], eax
+    add eax, 12
+    mov [esp+28], eax
 
     mov eax, 0x10
     mov ds, eax
@@ -214,14 +202,13 @@ irq%1:
     call irq_handler_c
     add esp, 8
 
-; 1. Check if CS (at esp + 52) & 0x03 == 3
+; Check if came from user
     mov ax, [esp + 52]
     and ax, 0x03
     cmp ax, 3
     je .to_user
 
 .to_kernel:
-
 ; Move new eip, cs and eflags to kernel stack to iretd from there in order to clean its stack
     mov eax, [safe_transition_stack] ; Saved kernel esp
 
@@ -246,7 +233,6 @@ irq%1:
     iretd
 
 .to_user:
-
 ; Move new eip, cs, eflags, useresp and ss to kernel stack to iretd from there in order to clean its stack
     mov eax, [safe_transition_stack] ; Saved kernel esp
     sub eax, 8
@@ -280,24 +266,58 @@ irq%1:
     sub esp, 8 ; Move 2 cells because transition to user has 2 more values
     iretd
 
-.not_from_kernel:
+.from_user:
     mov eax, 0x10
     mov ds, eax
     mov es, eax
     mov fs, eax
     mov gs, eax
 
+; C handler call
     push esp
     push dword VEC
     call irq_handler_c
     add esp, 8
 
+; Check if going to user
+    mov ax, [esp + 52]
+    and ax, 0x03
+    cmp ax, 3
+    jne .user_to_kernel
+
+.user_to_user:
     pop gs
     pop fs
     pop es
     pop ds
     popad
     iretd
+
+.user_to_kernel:
+    mov eax, [esp + 28]
+    sub eax, 12
+    mov [safe_transition_stack], eax
+
+    mov ebx, [esp + 48] ; New EIP
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [esp + 52] ; New CS
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [esp + 56] ; New EFLAGS
+    mov [eax], ebx
+
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popad
+
+    mov esp, [safe_transition_stack] ; Kernel esp - 12
+    iretd
+
 %endmacro
 
 IRQ_STUB 0
