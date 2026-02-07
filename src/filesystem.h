@@ -12,6 +12,8 @@ void filesystem_init(void);
 bool_t filesystem_read_file(const char* name, uint8_t** data_ptr, uint32_t* data_size);
 bool_t filesystem_write_file(const char* name, const uint8_t* data, size_t size);
 bool_t filesystem_delete_file(const char* name);
+char** filesystem_list_files(const char* path, int* file_count);
+char** filesystem_list_dirs(const char* path, int* dir_count);
 void filesystem_print_all_entries();
 
 #endif //FILESYSTEM_H

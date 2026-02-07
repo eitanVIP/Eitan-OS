@@ -257,31 +257,6 @@ bool_t filesystem_read_file(const char* name, uint8_t** data_ptr, uint32_t* data
     return 1;
 }
 
-// static bool_t find_next_entry(int entry_sector, const uint8_t* entry_sector_buf, int entry_idx, file_entry_t* next_entry) {
-//     for (int i = entry_idx + 1; i < 4; i++) {
-//         *next_entry = ((file_entry_t*)&entry_sector_buf)[i];
-//         if (next_entry->magic_number != MAGIC_NUMBER)
-//             continue;
-//
-//         return 1;
-//     }
-//
-//     for (int i = entry_sector; i < FILE_TABLE_SECTORS + 1; i++) {
-//         unsigned char sector_buf[SECTOR_SIZE] = {};
-//         filesystem_read_sectors(i, sector_buf, SECTOR_SIZE);
-//
-//         for (int j = 0; j < 4; j++) {
-//             *next_entry = ((file_entry_t*)&sector_buf)[j];
-//             if (next_entry->magic_number != MAGIC_NUMBER)
-//                 continue;
-//
-//             return 1;
-//         }
-//     }
-//
-//     return 0;
-// }
-
 static bool_t find_space_for_file(file_entry_t* file_table, size_t file_size, uint32_t* file_start_sector, uint8_t* file_entry_idx) {
     bool_t are_there_entries = 0;
 
@@ -405,6 +380,112 @@ bool_t filesystem_delete_file(const char* name) {
     shift_file_entries_backward(file_table, file_entry_idx + 1);
 
     return 1;
+}
+
+char** filesystem_list_files(const char* path, int* file_count) {
+    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+
+    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+
+    int count = 0;
+    int path_len = strlen(path);
+
+    int needs_trailing_slash = (path_len > 0 && path[path_len - 1] != '/') ? 1 : 0;
+
+    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+        if (file_table[i].magic_number != MAGIC_NUMBER) continue;
+
+        const char* name = file_table[i].name;
+
+        if (strncmp(name, path, path_len)) {
+            const char* relative_name = name + path_len;
+
+            if (*relative_name == '\0') continue;
+
+            if (strchr(relative_name, '/') == null) {
+                count++;
+            }
+        }
+    }
+
+    // Allocate exact size needed
+    char** files = malloc(count * sizeof(char*));
+
+    int j = 0;
+    for (int i = 0; i < FILE_TABLE_ENTRIES && j < count; i++) {
+        if (file_table[i].magic_number != MAGIC_NUMBER) continue;
+
+        const char* name = file_table[i].name;
+        if (strncmp(name, path, path_len)) {
+            const char* relative_name = name + path_len;
+            if (*relative_name == '\0') continue;
+
+            if (strchr(relative_name, '/') == null) {
+                files[j++] = strdup(name);
+            }
+        }
+    }
+
+    free(file_table);
+    *file_count = j;
+    return files;
+}
+
+char** filesystem_list_dirs(const char* path, int* dir_count) {
+    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    if (!file_table) return null;
+
+    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+
+    int count = 0;
+    int path_len = strlen(path);
+    char** found_dirs = malloc(FILE_TABLE_ENTRIES * sizeof(char*));
+
+    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+        if (file_table[i].magic_number != MAGIC_NUMBER) continue;
+
+        const char* name = file_table[i].name;
+
+        if (strncmp(name, path, path_len)) {
+            const char* relative = name + path_len;
+
+            char* next_slash = strchr(relative, '/');
+
+            if (next_slash != null) {
+                int full_dir_path_len = (next_slash - name) + 1;
+
+                char* dir_full_path = malloc(full_dir_path_len + 1);
+                memcpy(dir_full_path, name, full_dir_path_len);
+                dir_full_path[full_dir_path_len] = '\0';
+
+                bool_t is_duplicate = false;
+                for (int k = 0; k < count; k++) {
+                    // FIX: strcmp returns 0 on match.
+                    if (strcmp(found_dirs[k], dir_full_path)) {
+                        is_duplicate = true;
+                        break;
+                    }
+                }
+
+                if (!is_duplicate) {
+                    found_dirs[count++] = dir_full_path;
+                } else {
+                    free(dir_full_path);
+                }
+            }
+        }
+    }
+
+    free(file_table);
+
+    char** result = malloc(count * sizeof(char*));
+    if (result) {
+        memcpy(result, found_dirs, count * sizeof(char*));
+    }
+
+    free(found_dirs);
+    *dir_count = count;
+    return result;
 }
 
 void filesystem_print_all_entries() {

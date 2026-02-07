@@ -203,3 +203,32 @@ unsigned char strcmp(const char* s1, const char* s2) {
 
     return 1;
 }
+
+int strncmp(const char *s1, const char *s2, size_t n) {
+    while (n > 0) {
+        if (*s1 != *s2 || *s1 == '\0') {
+            return false;
+        }
+        s1++;
+        s2++;
+        n--;
+    }
+    return true;
+}
+
+char* strchr(const char *s, int c) {
+    char target = (char)c;
+
+    while (*s != '\0') {
+        if (*s == target) {
+            return (char *)s;
+        }
+        s++;
+    }
+
+    if (target == '\0') {
+        return (char *)s;
+    }
+
+    return null;
+}

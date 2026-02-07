@@ -348,6 +348,14 @@ void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32
             }
             break;
 
+        case 42: // List files (arg1 pointer to name of path, arg2 pointer to put pointer to array of names, arg3 pointer to put array size)
+            *(char***)arg2 = filesystem_list_files((char*)arg1, (int*)arg3);
+            break;
+
+        case 43: // List dirs (arg1 pointer to name of path, arg2 pointer to put pointer to array of names, arg3 pointer to put array size)
+            *(char***)arg2 = filesystem_list_dirs((char*)arg1, (int*)arg3);
+            break;
+
         default:
             break;
     }
