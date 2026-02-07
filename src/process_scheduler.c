@@ -12,35 +12,26 @@
 #define STACKS_START 0x1000000
 
 typedef struct {
-    unsigned int gs;
-    unsigned int fs;
-    unsigned int es;
-    unsigned int ds;
+    uint32_t gs;
+    uint32_t fs;
+    uint32_t es;
+    uint32_t ds;
 
-    unsigned int edi;
-    unsigned int esi;
-    unsigned int ebp;
-    unsigned int esp;
-    unsigned int ebx;
-    unsigned int edx;
-    unsigned int ecx;
-    unsigned int eax;
+    uint32_t edi;
+    uint32_t esi;
+    uint32_t ebp;
+    uint32_t esp;
+    uint32_t ebx;
+    uint32_t edx;
+    uint32_t ecx;
+    uint32_t eax;
 
-    unsigned int eip;
-    unsigned int cs;
-    unsigned int eflags;
-    unsigned int useresp;
-    unsigned int ss;
+    uint32_t eip;
+    uint32_t cs;
+    uint32_t eflags;
+    uint32_t useresp;
+    uint32_t ss;
 } cpu_state_t;
-
-typedef struct process {
-    unsigned int pid;
-    cpu_state_t regs;
-    void* stack_start;
-    unsigned int pending_signals;
-
-    struct process* next;
-} process_t;
 
 typedef struct stack {
     void* start;
@@ -48,25 +39,34 @@ typedef struct stack {
     struct stack *next;
 } stack_t;
 
-static int highest_pid = 0;
+typedef struct process {
+    uint32_t pid;
+    cpu_state_t regs;
+    stack_t* stack;
+    uint32_t pending_signals;
+
+    struct process* next;
+} process_t;
+
+static int32_t highest_pid = 0;
 static process_t* current_process;
 static stack_t* stack_list;
 
 void process_scheduler_init() {
-    current_process = malloc(sizeof(process_t));
-    current_process->pid = 0;
-    current_process->regs = (cpu_state_t){ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    current_process->pending_signals = 0;
-    current_process->stack_start = 0;
-    current_process->next = current_process;
-
     stack_list = malloc(sizeof(stack_t));
     stack_list->start = 0;
     stack_list->free = 0;
     stack_list->next = null;
+
+    current_process = malloc(sizeof(process_t));
+    current_process->pid = 0;
+    current_process->regs = (cpu_state_t){ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    current_process->pending_signals = 0;
+    current_process->stack = stack_list;
+    current_process->next = current_process;
 }
 
-void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
+uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
     asm volatile("cli");
 
     process_t* new_process = malloc(sizeof(process_t));
@@ -76,14 +76,14 @@ void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_le
 
     stack_t* current_stack = stack_list;
     stack_t* previous_stack = current_stack;
-    unsigned char found = 0;
-    unsigned int count = 0;
+    bool_t found = false;
+    uint32_t count = 0;
     while (current_stack) {
         if (current_stack->free) {
-            new_process->stack_start = current_stack->start;
-            current_stack->free = 0;
+            new_process->stack = current_stack;
+            current_stack->free = false;
 
-            found = 1;
+            found = true;
             break;
         }
 
@@ -93,10 +93,11 @@ void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_le
     }
     if (!found) {
         previous_stack->next = malloc(sizeof(stack_t));
-        previous_stack->next->free = 0;
+        previous_stack->next->free = false;
         previous_stack->next->start = STACKS_START + (void*)(count * STACK_SIZE);
+        previous_stack->next->next = null;
 
-        new_process->stack_start = previous_stack->next->start;
+        new_process->stack = previous_stack->next;
     }
 
     unsigned short code_segment;
@@ -109,27 +110,187 @@ void process_scheduler_add_process(void* process_code_start, bool_t is_kernel_le
         data_segment = gdt_get_index(4, 0, 3);
     }
     new_process->regs = (cpu_state_t){ data_segment, data_segment, data_segment, data_segment,
-        0, 0, 0, (unsigned int)new_process->stack_start, 0, 0, 0, 0, (unsigned int)process_code_start,
-        code_segment, 1 << 1 | 1 << 9 /* bit1 = 1, bit9 = interrupt enabled = 1 */, (unsigned int)new_process->stack_start, data_segment };
+        0, 0, 0, (unsigned int)new_process->stack->start, 0, 0, 0, 0, (unsigned int)process_code_start,
+        code_segment, 1 << 1 | 1 << 9 /* bit1 = 1, bit9 = interrupt enabled = 1 */, (unsigned int)new_process->stack->start, data_segment };
 
     new_process->next = current_process->next;
     current_process->next = new_process;
 
     asm volatile("sti");
+    return new_process->pid;
 }
 
-void process_scheduler_next_process(unsigned int* current_regs) {
-    if ((current_regs[13] & 0x3) != 3) {
-        if (current_regs[12] > 0x500000) {
-            screen_println("SAVING WEIRD EIP TO KERNEL");
-            screen_println_num((double)(uint64_t)current_process->next->regs.eip);
-            screen_println_num((double)(uint64_t)current_process->regs.eip);
-            screen_println_num((double)(current_regs[12]));
+bool_t find_process(uint32_t pid, process_t** process_ptr) {
+    *process_ptr = current_process;
+    process_t* first_process = *process_ptr;
 
-            asm volatile("hlt");
+    do {
+        if ((*process_ptr)->pid == pid)
+            break;
+        *process_ptr = (*process_ptr)->next;
+    } while (*process_ptr != first_process);
+    if ((*process_ptr)->pid != pid)
+        return false;
+
+    return true;
+}
+
+bool_t find_previous_process(uint32_t pid, process_t** process_ptr) {
+    *process_ptr = current_process;
+    process_t* first_process = *process_ptr;
+
+    do {
+        if ((*process_ptr)->next->pid == pid)
+            break;
+        *process_ptr = (*process_ptr)->next;
+    } while (*process_ptr != first_process);
+    if ((*process_ptr)->next->pid != pid)
+        return false;
+
+    return true;
+}
+
+bool_t process_scheduler_remove_process(uint32_t pid) {
+    if (pid == 0)
+        return false;
+
+    process_t* process;
+    if (!find_previous_process(pid, &process))
+        return false;
+
+    process_t* next_next = process->next->next;
+    process->next->stack->free = true;
+    free(process->next);
+    process->next = next_next;
+
+    return true;
+}
+
+void process_scheduler_exit() {
+    process_t* next = current_process->next;
+    process_scheduler_remove_process(current_process->pid);
+    current_process = next;
+}
+
+void process_scheduler_send_signals(uint32_t pid, uint32_t signals) {
+    process_t* process;
+    if (!find_process(pid, &process))
+        return;
+
+    process->pending_signals |= signals;
+}
+
+bool_t handle_signals(process_t* process) {
+    uint32_t sigs = process->pending_signals;
+    process->pending_signals = 0;
+
+    if (sigs & SIG_HUP) {
+
+    }
+    if (sigs & SIG_INT) {
+
+    }
+    if (sigs & SIG_QUIT) {
+
+    }
+    if (sigs & SIG_ILL) {
+
+    }
+    if (sigs & SIG_TRAP) {
+
+    }
+    if (sigs & SIG_ABRT) {
+        if (process_scheduler_remove_process(process->pid)) {
+            screen_println("SIGABRT");
+            return true;
         }
     }
+    if (sigs & SIG_BUS) {
 
+    }
+    if (sigs & SIG_FPE) {
+
+    }
+    if (sigs & SIG_KILL) {
+        if (process_scheduler_remove_process(process->pid)) {
+            screen_println("SIGKILL");
+            return true;
+        }
+    }
+    if (sigs & SIG_USR1) {
+
+    }
+    if (sigs & SIG_SEGV) {
+
+    }
+    if (sigs & SIG_USR2) {
+
+    }
+    if (sigs & SIG_PIPE) {
+
+    }
+    if (sigs & SIG_ALRM) {
+
+    }
+    if (sigs & SIG_TERM) {
+
+    }
+    if (sigs & SIG_STKFLT) {
+
+    }
+    if (sigs & SIG_CHLD) {
+
+    }
+    if (sigs & SIG_CONT) {
+
+    }
+    if (sigs & SIG_STOP) {
+
+    }
+    if (sigs & SIG_TSTP) {
+
+    }
+    if (sigs & SIG_TTIN) {
+
+    }
+    if (sigs & SIG_TTOU) {
+
+    }
+    if (sigs & SIG_URG) {
+
+    }
+    if (sigs & SIG_XCPU) {
+
+    }
+    if (sigs & SIG_XFSZ) {
+
+    }
+    if (sigs & SIG_VTALRM) {
+
+    }
+    if (sigs & SIG_PROF) {
+
+    }
+    if (sigs & SIG_WINCH) {
+
+    }
+    if (sigs & SIG_IO) {
+
+    }
+    if (sigs & SIG_PWR) {
+
+    }
+    if (sigs & SIG_SYS) {
+
+    }
+    if (sigs & SIG_RT) {
+
+    }
+
+    return false;
+}
+
+void process_scheduler_next_process(uint32_t* current_regs) {
     current_process->regs.gs = current_regs[0];
     current_process->regs.fs = current_regs[1];
     current_process->regs.es = current_regs[2];
@@ -155,7 +316,9 @@ void process_scheduler_next_process(unsigned int* current_regs) {
         current_process->regs.ss = 0;
     }
 
-    current_process = current_process->next;
+    do {
+        current_process = current_process->next;
+    } while (handle_signals(current_process)); // returns true if process was killed
 
     current_regs[0] = current_process->regs.gs;
     current_regs[1] = current_process->regs.fs;
@@ -180,14 +343,5 @@ void process_scheduler_next_process(unsigned int* current_regs) {
     } else {
         current_regs[15] = 0;
         current_regs[16] = 0;
-        if (current_process->regs.eip > 0x500000) {
-            screen_println("KERNEL RUNNING WEIRD EIP");
-            screen_println_num((double)(uint64_t)current_process);
-            screen_println_num((double)(uint64_t)current_process->next);
-            screen_println_num((double)(current_process->regs.eip));
-            screen_println_num((double)(current_process->next->regs.eip));
-
-            asm volatile("hlt");
-        }
     }
 }

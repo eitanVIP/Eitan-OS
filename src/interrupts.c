@@ -285,23 +285,28 @@ void irq_handler_c(unsigned int int_no, unsigned int* regs) {
 
 void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3) {
     switch (syscall_id) {
-        case 0: // Close process
+        case 0: // Exit
+            process_scheduler_exit();
             break;
 
-        case 1: // Run program (arg1 pointer to name of file)
+        case 1: // Run program (arg1 pointer to name of file, arg2 pointer to put pid)
             uint8_t* data1;
             uint32_t data_size1;
             if (filesystem_read_file((const char*)arg1, &data1, &data_size1)) {
-                program_loader_load_elf32(data1);
+                program_loader_load_elf32(data1, (uint32_t*)arg2);
             } else {
                 screen_println("Couldn't load file");
             }
             break;
 
+        case 2: // Close process (arg1 pid)
+            process_scheduler_send_signals(arg1, SIG_KILL);
+            break;
 
 
-        case 10: // Malloc (arg1 size)
-            malloc(arg1);
+
+        case 10: // Malloc (arg1 size, arg2 pointer to put pointer to memory)
+            *(uint8_t**)arg2 = malloc(arg1);
             break;
 
         case 11: // Free (arg1 pointer)

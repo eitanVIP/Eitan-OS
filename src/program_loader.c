@@ -89,7 +89,7 @@ bool_t check_file(elf32_header header) {
     return true;
 }
 
-bool_t program_loader_load_elf32(const uint8_t* file_data) {
+bool_t program_loader_load_elf32(const uint8_t* file_data, uint32_t* pid) {
     elf32_header header = *(elf32_header*)file_data;
     if (!check_file(header))
         return false;
@@ -108,9 +108,7 @@ bool_t program_loader_load_elf32(const uint8_t* file_data) {
         memset((uint8_t*)entry.virtual_address + entry.file_size, 0, entry.memory_size - entry.file_size);
     }
 
-    // void (*entry_point)(void) = (void (*)(void))header.entry;
-    // entry_point();
-    process_scheduler_add_process((void*)header.entry, false);
+    *pid = process_scheduler_add_process((void*)header.entry, false);
 
     return true;
 }

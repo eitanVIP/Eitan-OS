@@ -11,6 +11,7 @@
 #include "memory.h"
 #include "process_scheduler.h"
 #include "program_loader.h"
+#include "compiled_programs/shell.h"
 #include "compiled_programs/test.h"
 
 void kernel_main(void) {
@@ -26,7 +27,8 @@ void kernel_main(void) {
 
     filesystem_init();
 
-    program_loader_load_elf32(test_program_get());
+    // program_loader_load_elf32(test_program_get());
+    program_loader_load_elf32(shell_program_get());
 
     while (1) {
         uint16_t scancode = io_keyboard_read();
