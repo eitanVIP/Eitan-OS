@@ -7,6 +7,8 @@ SRC_DIR="src"
 LINKER_SCRIPT="linker.ld"
 KERNEL_ELF="$BUILD_DIR/kernel.elf"
 
+./programs/compile.sh shell
+
 # Clean and recreate build dir
 rm -rf $BUILD_DIR
 mkdir -p $BUILD_DIR

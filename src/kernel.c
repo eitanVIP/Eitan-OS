@@ -27,8 +27,9 @@ void kernel_main(void) {
 
     filesystem_init();
 
-    // program_loader_load_elf32(test_program_get());
-    program_loader_load_elf32(shell_program_get());
+    uint32_t pid;
+    // program_loader_load_elf32(test_program_get(), &pid);
+    program_loader_load_elf32(shell_program_get(), &pid);
 
     while (1) {
         uint16_t scancode = io_keyboard_read();
@@ -46,7 +47,8 @@ void kernel_main(void) {
                     break;
 
                 case 0x58: // F12
-                    screen_println("TEST");
+                    // screen_println("TEST");
+                    process_scheduler_remove_process(pid);
                     break;
 
                 default:

@@ -71,7 +71,7 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
 
     process_t* new_process = malloc(sizeof(process_t));
 
-    new_process->pid = highest_pid++;
+    new_process->pid = ++highest_pid;
     new_process->pending_signals = 0;
 
     stack_t* current_stack = stack_list;
