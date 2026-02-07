@@ -151,6 +151,8 @@ bool_t find_previous_process(uint32_t pid, process_t** process_ptr) {
 }
 
 bool_t process_scheduler_remove_process(uint32_t pid) {
+    asm volatile("cli");
+
     if (pid == 0)
         return false;
 
@@ -162,14 +164,35 @@ bool_t process_scheduler_remove_process(uint32_t pid) {
     process->next->stack->free = true;
     free(process->next);
     process->next = next_next;
+    current_process = process;
 
     return true;
 }
 
-void process_scheduler_exit() {
-    process_t* next = current_process->next;
+void process_scheduler_exit(uint32_t* current_regs) {
     process_scheduler_remove_process(current_process->pid);
-    current_process = next;
+
+    process_t* kernel_process;
+    find_process(0, &kernel_process);
+    current_process = kernel_process;
+
+    current_regs[0] = current_process->regs.gs;
+    current_regs[1] = current_process->regs.fs;
+    current_regs[2] = current_process->regs.es;
+    current_regs[3] = current_process->regs.ds;
+    current_regs[4] = current_process->regs.edi;
+    current_regs[5] = current_process->regs.esi;
+    current_regs[6] = current_process->regs.ebp;
+    current_regs[7] = current_process->regs.esp;
+    current_regs[8] = current_process->regs.ebx;
+    current_regs[9] = current_process->regs.edx;
+    current_regs[10] = current_process->regs.ecx;
+    current_regs[11] = current_process->regs.eax;
+    current_regs[12] = current_process->regs.eip;
+    current_regs[13] = current_process->regs.cs;
+    current_regs[14] = current_process->regs.eflags;
+    current_regs[15] = 0;
+    current_regs[16] = 0;
 }
 
 void process_scheduler_send_signals(uint32_t pid, uint32_t signals) {

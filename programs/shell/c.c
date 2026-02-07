@@ -2,15 +2,15 @@ void syscall(unsigned int num, unsigned int arg1, unsigned int arg2, unsigned in
     asm volatile(
         "int $0x80"
         : // No output operands
-        : "a"(num),  // Put 'num' into eax
-          "b"(arg1), // Put 'arg1' into ebx
-          "c"(arg2), // Put 'arg2' into ecx
-          "d"(arg3)  // Put 'arg3' into edx
-        : "memory"   // Tell the compiler memory might change
+        : "a"(num),
+          "b"(arg1),
+          "c"(arg2),
+          "d"(arg3)
+        : "memory"
     );
 }
 
 void main(void) {
-    char* str = "NIMAN";
+    char* str = "NIMAN\n";
     syscall(30, (unsigned int)str, 0, 0);
 }

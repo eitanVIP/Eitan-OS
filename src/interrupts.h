@@ -5,4 +5,3 @@
 #pragma once
 
 void interrupts_init();
-void send_eoi(unsigned int irq_number);

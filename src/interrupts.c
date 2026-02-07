@@ -23,7 +23,7 @@
 
 void exception_handler_c(unsigned int int_no, unsigned int* regs);
 void irq_handler_c(unsigned int int_no, unsigned int* regs);
-void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3);
+void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3, uint32_t* current_regs);
 
 extern void isr0();  extern void isr1();  extern void isr2();  extern void isr3();
 extern void isr4();  extern void isr5();  extern void isr6();  extern void isr7();
@@ -283,10 +283,10 @@ void irq_handler_c(unsigned int int_no, unsigned int* regs) {
     send_eoi(irq);
 }
 
-void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3) {
+void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t* current_regs) {
     switch (syscall_id) {
         case 0: // Exit
-            process_scheduler_exit();
+            process_scheduler_exit(current_regs);
             break;
 
         case 1: // Run program (arg1 pointer to name of file, arg2 pointer to put pid)

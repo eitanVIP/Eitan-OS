@@ -381,14 +381,44 @@ syscall_handler_asm:
 
     mov eax, [esp+44]
 
+    push esp     ; current_regs
     push edx     ; Argument 3
     push ecx     ; Argument 2
     push ebx     ; Argument 1
     push eax     ; Syscall ID
 
     call syscall_handler_c
+    add esp, 20
 
-    add esp, 16
+; Check if going to user
+    mov ax, [esp + 52]
+    and ax, 0x03
+    cmp ax, 3
+    jne .user_to_kernel
+
+.user_to_user:
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popad
+    iretd
+
+.user_to_kernel:
+    mov eax, [esp + 28]
+    sub eax, 12
+    mov [safe_transition_stack], eax
+
+    mov ebx, [esp + 48] ; New EIP
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [esp + 52] ; New CS
+    mov [eax], ebx
+    add eax, 4
+
+    mov ebx, [esp + 56] ; New EFLAGS
+    mov [eax], ebx
 
     pop gs
     pop fs
@@ -396,4 +426,5 @@ syscall_handler_asm:
     pop ds
     popad
 
+    mov esp, [safe_transition_stack] ; Kernel esp - 12
     iretd
