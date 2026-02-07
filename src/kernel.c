@@ -35,7 +35,7 @@ void kernel_main(void) {
         uint16_t scancode = io_keyboard_read();
         if (io_is_character(scancode)) {
             const char keyboard[2] = { io_scancode_to_character(scancode), '\0' };
-            screen_print(keyboard);
+            // screen_print(keyboard);
         } else {
             switch (scancode & 0xFF) {
                 case 0x48: // Arrow Up

@@ -64,7 +64,7 @@ uint16_t io_keyboard_read() {
 
 bool_t io_is_character(uint16_t scancode) {
     char ascii = io_scancode_to_character(scancode);
-    return scancode >> 8 != SCAN_SPECIAL_PREFIX && ((ascii > 'A' && ascii < 'Z') || (ascii > 'a' && ascii < 'z'));
+    return scancode >> 8 != SCAN_SPECIAL_PREFIX && ((ascii >= 'A' && ascii <= 'Z') || (ascii >= 'a' && ascii <= 'z'));
 }
 
 char io_scancode_to_character(uint16_t scancode) {
