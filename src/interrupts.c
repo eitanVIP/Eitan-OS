@@ -294,8 +294,6 @@ void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32
             uint32_t data_size1;
             if (filesystem_read_file((const char*)arg1, &data1, &data_size1)) {
                 program_loader_load_elf32(data1, (uint32_t*)arg2);
-            } else {
-                screen_println("Couldn't load file");
             }
             break;
 
@@ -316,7 +314,9 @@ void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32
 
 
         case 20: // Read keyboard char (arg1 pointer to put char)
-            *(uint16_t*)arg1 = io_keyboard_read();
+            // *(uint16_t*)arg1 = io_keyboard_read();
+            *(uint16_t*)arg1 = io_keyboard_buffer;
+            io_keyboard_buffer = 0;
             break;
 
 
@@ -337,15 +337,11 @@ void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32
             if (filesystem_read_file((const char*)arg1, &data2, &data_size2)) {
                 *(uint8_t**)arg2 = data2;
                 *(uint8_t*)arg3 = data_size2;
-            } else {
-                screen_println("Couldn't load file");
             }
             break;
 
         case 41: // Write file (arg1 pointer to name of file, arg2 pointer to data, arg3 size of data)
-            if (!filesystem_write_file((const char*)arg1, (const uint8_t*)arg2, arg3)) {
-                screen_println("Couldn't write file");
-            }
+            filesystem_write_file((const char*)arg1, (const uint8_t*)arg2, arg3);
             break;
 
         case 42: // List files (arg1 pointer to name of path, arg2 pointer to put pointer to array of names, arg3 pointer to put array size)
@@ -354,6 +350,10 @@ void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32
 
         case 43: // List dirs (arg1 pointer to name of path, arg2 pointer to put pointer to array of names, arg3 pointer to put array size)
             *(char***)arg2 = filesystem_list_dirs((char*)arg1, (int*)arg3);
+            break;
+
+        case 44: // Delete file (arg1 pointer to name of file)
+            filesystem_delete_file((const char*)arg1);
             break;
 
         default:

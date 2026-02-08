@@ -14,3 +14,5 @@ unsigned short io_inw(unsigned short port);
 uint16_t io_keyboard_read();
 bool_t io_is_character(uint16_t scancode);
 char io_scancode_to_character(uint16_t scancode);
+
+extern volatile uint16_t io_keyboard_buffer;

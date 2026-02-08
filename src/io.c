@@ -39,6 +39,8 @@ char scancode_to_ascii[128] = {
     '*',0,' ','0','.'
 };
 
+uint16_t volatile io_keyboard_buffer = 0;
+
 uint16_t io_keyboard_read() {
     while (true) {
         while (!(io_inb(KEYBOARD_STATUS_PORT) & 1)); // Wait for data
@@ -46,11 +48,11 @@ uint16_t io_keyboard_read() {
 
         // 2. Check if it is a "Special" prefix
         if (first_byte == SCAN_SPECIAL_PREFIX) {
-            uint8_t second_byte;
-            do {
-                while (!(io_inb(KEYBOARD_STATUS_PORT) & 1)); // Wait for data
-                second_byte = io_inb(KEYBOARD_DATA_PORT);
-            } while (second_byte & 0x80); // Skip release codes
+            while (!(io_inb(KEYBOARD_STATUS_PORT) & 1)); // Wait for data
+            uint8_t second_byte = io_inb(KEYBOARD_DATA_PORT);
+
+            if (second_byte & 0x80) // Skip release codes
+                continue;
 
             return (uint16_t)first_byte << 8 | second_byte;
         }
@@ -63,8 +65,16 @@ uint16_t io_keyboard_read() {
 }
 
 bool_t io_is_character(uint16_t scancode) {
-    char ascii = io_scancode_to_character(scancode);
-    return scancode >> 8 != SCAN_SPECIAL_PREFIX && ((ascii >= 'A' && ascii <= 'Z') || (ascii >= 'a' && ascii <= 'z'));
+    if (scancode >= 256) return false;
+
+    char ascii = scancode_to_ascii[scancode];
+
+    if (scancode >> 8 == 0xE0) return false;
+
+    return (ascii >= ' ' && ascii <= '~') ||
+           (ascii == '\b') ||
+           (ascii == '\t') ||
+           (ascii == '\n');
 }
 
 char io_scancode_to_character(uint16_t scancode) {

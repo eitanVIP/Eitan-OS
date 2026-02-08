@@ -49,11 +49,15 @@ char scancode_to_ascii[128] = {
     '\\','z','x','c','v','b','n','m',',','.','/',0,
     '*',0,' ','0','.'
 };
-unsigned short read_char() {
-    unsigned short c;
-    syscall(20, (unsigned int)&c, 0, 0);
+
+unsigned short read_keyboard() {
+    unsigned short c = 0;
+    while (c == 0) {
+        syscall(20, (unsigned int)&c, 0, 0);
+    }
     return c;
 }
+
 unsigned char is_character(unsigned short scancode) {
     if (scancode >= 256) return 0;
 
@@ -87,6 +91,10 @@ char** list_dirs(char* path, int* dir_count) {
     char** dirs;
     syscall(43, (unsigned int)path, (unsigned int)&dirs, (unsigned int)dir_count);
     return dirs;
+}
+
+void delete_file(char* filename) {
+    syscall(44, (unsigned int)filename, 0, 0);
 }
 
 
@@ -321,57 +329,316 @@ enum command {
     ls,
     echo,
     clear,
-    cd
+    cd,
+    touch,
+    cat,
+    write,
+    rm,
+    man,
+    find
 };
 
 char working_dir[128] = "/";
+int working_dir_len = 1;
+
+char* join_working_dir(char* path, char add_slash) {
+    int path_len = strlen(path);
+
+    char* full_path;
+    if (!add_slash) {
+        full_path = malloc(path_len + working_dir_len + 1);
+        memcpy(full_path, working_dir, working_dir_len);
+        memcpy(full_path + working_dir_len, path, path_len);
+        full_path[path_len + working_dir_len] = '\0';
+    } else {
+        full_path = malloc(path_len + working_dir_len + 2);
+        memcpy(full_path, working_dir, working_dir_len);
+        memcpy(full_path + working_dir_len, path, path_len);
+        full_path[path_len + working_dir_len] = '/';
+        full_path[path_len + working_dir_len + 1] = '\0';
+    }
+
+    return full_path;
+}
+
+void parse_path(char* path) {
+    int len = strlen(path);
+    if (len <= 1) return; // Already "/" or empty
+
+    // stack will store the start/end indices of directory names
+    // For a path like /a/b/c/, parts are "a", "b", "c"
+    char* stack[64];
+    int top = 0;
+
+    int i = 0;
+    while (path[i] != '\0') {
+        // Skip slashes to find the start of a folder name
+        while (path[i] == '/') i++;
+        if (path[i] == '\0') break;
+
+        int start = i;
+        // Find the end of the folder name
+        while (path[i] != '/' && path[i] != '\0') i++;
+
+        // Extract the folder name
+        int part_len = i - start;
+        char* part = substr(path, start, part_len);
+
+        if (strcmp(part, "..")) {
+            // "Pop" from stack if we can
+            if (top > 0) {
+                top--;
+                free(stack[top]);
+            }
+            free(part); // Free the ".." string
+        } else if (strcmp(part, ".")) {
+            // Ignore current directory
+            free(part);
+        } else {
+            // "Push" folder to stack
+            stack[top++] = part;
+        }
+    }
+
+    // Reconstruct the string
+    // Start with the leading slash
+    memset(path, 0, len);
+    path[0] = '/';
+    path[1] = '\0';
+
+    for (int j = 0; j < top; j++) {
+        char* temp = str_concat(path, stack[j]);
+
+        // str_concat returns new memory, so we copy it back to our buffer
+        // and ensure the trailing slash is added
+        char* temp2 = str_concat(temp, "/");
+
+        // Safety: assuming 'path' buffer is large enough
+        memcpy(path, temp2, strlen(temp2) + 1);
+
+        free(temp);
+        free(temp2);
+        free(stack[j]); // Clean up the heap-allocated parts from substr
+    }
+}
+
+void cmd_ls(char** args, int args_size) {
+    if (args_size != 0) {
+        print("Usage: ls\n");
+        return;
+    }
+    int file_count;
+    char** files = list_files(working_dir, &file_count);
+    for (int i = 0; i < file_count; i++) {
+        int name_len = strlen(files[i]);
+        char* msg = malloc(name_len + 2);
+        memcpy(msg, files[i], name_len);
+        msg[name_len] = '\n';
+        msg[name_len + 1] = '\0';
+        print(msg);
+        free(msg);
+        free(files[i]);
+    }
+    free(files);
+
+    int dir_count;
+    char** dirs = list_dirs(working_dir, &dir_count);
+    for (int i = 0; i < dir_count; i++) {
+        int name_len = strlen(dirs[i]);
+        char* msg = malloc(name_len + 2);
+        memcpy(msg, dirs[i], name_len);
+        msg[name_len] = '\n';
+        msg[name_len + 1] = '\0';
+        print(msg);
+        free(msg);
+        free(dirs[i]);
+    }
+    free(dirs);
+}
+
+void cmd_echo(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: echo <string>\n");
+        return;
+    }
+    int msg_len = strlen(args[0]);
+    char* msg = malloc((msg_len + 2) * sizeof(char));
+    memcpy(msg, args[0], msg_len);
+    msg[msg_len] = '\n';
+    msg[msg_len + 1] = '\0';
+    print(msg);
+    free(msg);
+}
+
+void cmd_cd(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: cd <path>\n");
+        return;
+    }
+    char* cd_name = join_working_dir(args[0], 1);
+    parse_path(cd_name);
+    memcpy(working_dir, cd_name, strlen(cd_name) + 1);
+    working_dir_len = strlen(working_dir);
+    free(cd_name);
+}
+
+void cmd_touch(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: touch <filename>\n");
+        return;
+    }
+    char* touch_name = join_working_dir(args[0], 0);
+    write_file(touch_name, "", 1);
+    print("Created: ");
+    print(touch_name);
+    print("\n");
+    free(touch_name);
+}
+
+void cmd_cat(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: cat <filename>\n");
+        return;
+    }
+    char* cat_name = join_working_dir(args[0], 0);
+    char* data;
+    int data_size;
+    read_file(cat_name, &data, &data_size);
+    print(data);
+    print("\n");
+    free(data);
+    free(cat_name);
+}
+
+void cmd_write(char** args, int args_size) {
+    if (args_size != 2) {
+        print("Usage: write <filename> <data>\n");
+        return;
+    }
+    char* write_name = join_working_dir(args[0], 0);
+    char* file_data = 0;
+    int file_data_size;
+    read_file(write_name, &file_data, &file_data_size);
+    if (file_data != 0) {
+        write_file(write_name, args[1], strlen(args[1]) + 1);
+        free(file_data);
+    } else {
+        print("Error: File doesn't exist\n");
+    }
+    free(write_name);
+}
+
+void cmd_rm(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: rm <filename>\n");
+        return;
+    }
+    char* rm_name = join_working_dir(args[0], 0);
+    delete_file(rm_name);
+    print("Deleted: ");
+    print(rm_name);
+    print("\n");
+    free(rm_name);
+}
+
+void cmd_man(char** args, int args_size) {
+    if (args_size != 0 && args_size != 1) {
+        print("Usage: man or man <command>\n");
+        return;
+    }
+    if (args_size == 0) {
+        print("List of commands:\nls echo cd touch cat write rm man find\n");
+    } else {
+        if (strcmp(args[0], "ls")) print("ls - prints all files and folders inside of working dir\nUsage: ls\n");
+        else if (strcmp(args[0], "echo")) print("echo - prints the provided text to the screen\nUsage: echo <string>\n");
+        else if (strcmp(args[0], "cd")) print("cd - changes the current working directory\nUsage: cd <path>\n");
+        else if (strcmp(args[0], "touch")) print("touch - creates a new empty file\nUsage: touch <filename>\n");
+        else if (strcmp(args[0], "cat")) print("cat - displays the contents of a file\nUsage: cat <filename>\n");
+        else if (strcmp(args[0], "write")) print("write - overwrites a file with provided text\nUsage: write <filename> <data>\n");
+        else if (strcmp(args[0], "rm")) print("rm - removes a file from the system\nUsage: rm <filename>\n");
+        else if (strcmp(args[0], "man")) print("man - displays manual pages for commands\nUsage: man or man <command>\n");
+        else if (strcmp(args[0], "find")) print("find - prints all nested files and folders in working dir\nUsage: find\n");
+        else print("Error: Command not found in manual.\n");
+    }
+}
+
+void recursive_find(char* path, int recursion_level) {
+    int file_count;
+    char** files = list_files(path, &file_count);
+    for (int i = 0; i < file_count; i++) {
+        for (int j = 0; j < recursion_level; j++)
+            print("   ");
+
+        print(files[i]); print("\n");
+        free(files[i]);
+    }
+    free(files);
+
+    int dir_count;
+    char** dirs = list_dirs(path, &dir_count);
+    for (int i = 0; i < dir_count; i++) {
+        for (int j = 0; j < recursion_level; j++)
+            print("   ");
+
+        print(dirs[i]); print("\n");
+        recursive_find(dirs[i], recursion_level + 1);
+        free(dirs[i]);
+    }
+    free(dirs);
+}
+
+void cmd_find(char** args, int args_size) {
+    if (args_size != 0) {
+        print("Usage: find\n");
+        return;
+    }
+    recursive_find(working_dir, 0);
+}
 
 void execute_command_line(enum command command, char** args, int args_size) {
     switch (command) {
         case ls:
-            int file_count;
-            char** files = list_files(working_dir, &file_count);
-            for (int i = 0; i < file_count; i++) {
-                int name_len = strlen(files[i]);
-                char* msg = malloc(name_len + 2);
-                memcpy(msg, files[i], name_len);
-                msg[name_len] = '\n';
-                msg[name_len + 1] = '\0';
-                print(msg);
-                free(msg);
-                free(files[i]);
-            }
-            free(files);
+            cmd_ls(args, args_size);
             break;
 
         case echo:
-            int msg_len = strlen(args[0]);
-            char* msg = malloc((msg_len + 2) * sizeof(char));
-
-            memcpy(msg, args[0], msg_len);
-            msg[msg_len] = '\n';
-            msg[msg_len + 1] = '\0';
-
-            print(msg);
-
-            free(msg);
+            cmd_echo(args, args_size);
             break;
 
         case clear:
+            clear_screen();
             break;
 
         case cd:
-            int dir_name_len = strlen(args[0]);
-            if (dir_name_len >= 127) {
-                memcpy(working_dir, args[0], 127);
-                working_dir[127] = '\0';
-            } else {
-                memcpy(working_dir, args[0], dir_name_len);
-                working_dir[dir_name_len + 1] = '\0';
-            }
+            cmd_cd(args, args_size);
+            break;
+
+        case touch:
+            cmd_touch(args, args_size);
+            break;
+
+        case cat:
+            cmd_cat(args, args_size);
+            break;
+
+        case write:
+            cmd_write(args, args_size);
+            break;
+
+        case rm:
+            cmd_rm(args, args_size);
+            break;
+
+        case man:
+            cmd_man(args, args_size);
+            break;
+
+        case find:
+            cmd_find(args, args_size);
             break;
 
         default:
+            print("Error: Command not found\n");
             break;
     }
 }
@@ -396,6 +663,20 @@ char parse_command_line(const char* command_line, enum command* command_out, cha
         *command_out = clear;
     } else if (strncmp(command_line, "cd", command_size)) {
         *command_out = cd;
+    } else if (strncmp(command_line, "touch", command_size)) {
+        *command_out = touch;
+    } else if (strncmp(command_line, "cat", command_size)) {
+        *command_out = cat;
+    } else if (strncmp(command_line, "write", command_size)) {
+        *command_out = write;
+    } else if (strncmp(command_line, "rm", command_size)) {
+        *command_out = rm;
+    } else if (strncmp(command_line, "man", command_size)) {
+        *command_out = man;
+    } else if (strncmp(command_line, "find", command_size)) {
+        *command_out = find;
+    } else {
+        *command_out = none;
     }
 
     unsigned int args_capacity = 10;
@@ -403,7 +684,7 @@ char parse_command_line(const char* command_line, enum command* command_out, cha
     unsigned int args_size = 0;
 
     int arg_start = command_size + 1;
-    char reached_end = 0;
+    char reached_end = command_line[arg_start] == '\0' || arg_start > 127;
     while (!reached_end) {
         int arg_size = 0;
         while (command_line[arg_start + arg_size] != ' ') {
@@ -443,10 +724,14 @@ char* read_command_line() {
     int counter = 0;
 
     while (scancode != 0x1C) { // Enter
-        scancode = read_char();
+        scancode = read_keyboard();
 
         if (is_character(scancode)) {
             char ascii = scancode_to_ascii[scancode];
+
+            if (ascii == '\b' && counter <= 0)
+                continue;
+
             if (ascii >= 32 && ascii <= 126)
                 command_line[counter++] = ascii;
             else if (ascii == '\b')
@@ -464,27 +749,17 @@ char* read_command_line() {
 }
 
 void main(void) {
-    print("Hello World From Shell\n");
-
-    //    Command Parse Test
-    // enum command command;
-    // char** args;
-    // int args_size;
-    // parse_command_line("echo -al -bh -ng", &command, &args, &args_size);
-    //
-    // char msg[] = { command + '0', '\n', '\0' };
-    // print(msg);
-    //
-    // for (int i = 0; i < args_size; i++) {
-    //     char* arg_msg = malloc((strlen(args[i]) + 2) * sizeof(char));
-    //     memcpy(arg_msg, args[i], strlen(args[i]));
-    //
-    //     arg_msg[strlen(args[i])] = '\n';
-    //     arg_msg[strlen(args[i]) + 1] = '\0';
-    //     print(arg_msg);
-    // }
-
     while (1) {
+        int working_dir_len = strlen(working_dir);
+        char* line_prefix = malloc(working_dir_len + 4);
+        memcpy(line_prefix, working_dir, working_dir_len);
+        line_prefix[working_dir_len] = ' ';
+        line_prefix[working_dir_len + 1] = '>';
+        line_prefix[working_dir_len + 2] = ' ';
+        line_prefix[working_dir_len + 3] = '\0';
+        print(line_prefix);
+        free(line_prefix);
+
         char* command_line = read_command_line();
 
         enum command command;

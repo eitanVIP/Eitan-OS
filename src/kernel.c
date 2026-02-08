@@ -33,10 +33,9 @@ void kernel_main(void) {
 
     while (1) {
         uint16_t scancode = io_keyboard_read();
-        if (io_is_character(scancode)) {
-            const char keyboard[2] = { io_scancode_to_character(scancode), '\0' };
-            // screen_print(keyboard);
-        } else {
+        io_keyboard_buffer = scancode;
+
+        if (!io_is_character(scancode)) {
             switch (scancode & 0xFF) {
                 case 0x48: // Arrow Up
                     screen_scroll(screen_get_scroll() - 1);

@@ -62,14 +62,18 @@ void screen_flush() {
         }
 
         if (!counted_enough) {
-            screen_clear_screen();
+            for (int i = 0; i < VGA_HEIGHT * VGA_WIDTH; i++) {
+                VGA[i] = 0;
+            }
             return;
         }
     }
     int buffer_end_clamped = min(buffer_end, buffer_start + VGA_WIDTH * VGA_HEIGHT);
     cursor_x = 0;
     cursor_y = 0;
-    screen_clear_screen();
+    for (int i = 0; i < VGA_HEIGHT * VGA_WIDTH; i++) {
+        VGA[i] = 0;
+    }
 
     for (int i = buffer_start; i < buffer_end_clamped; i++) {
         if (buffer[i] == '\n') {
@@ -165,7 +169,8 @@ int screen_get_scroll() {
 }
 
 void screen_clear_screen() {
-    for (int i = 0; i < VGA_HEIGHT * VGA_WIDTH; i++) {
-        VGA[i] = 0;
-    }
+    memset(buffer, 0, BUFFER_SIZE);
+    buffer_end = 0;
+    scroll = 0;
+    screen_flush();
 }
