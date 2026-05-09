@@ -14,7 +14,7 @@
 #include "compiled_programs/shell.h"
 #include "compiled_programs/test.h"
 
-void kernel_main(void) {
+void kernel_main(unsigned char* multiboot_pointer) {
     memory_heap_init();
     gdt_init();
     process_scheduler_init();

@@ -14,14 +14,14 @@ foreach(SRC ${SRC_FILES})
     if(${SRC} MATCHES ".+\\.S$")
         add_custom_command(
                 OUTPUT ${OBJ}
-                COMMAND nasm -f elf32 ${SRC} -o ${OBJ}
+                COMMAND nasm -f elf64 ${SRC} -o ${OBJ}
                 DEPENDS ${SRC}
                 COMMENT "Assembling ${SRC} -> ${OBJ}"
         )
     else()
         add_custom_command(
                 OUTPUT ${OBJ}
-                COMMAND ${CMAKE_C_COMPILER} -m32 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib -c ${SRC} -o ${OBJ}
+                COMMAND ${CMAKE_C_COMPILER} -m64 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib -c ${SRC} -o ${OBJ}
                 DEPENDS ${SRC}
                 COMMENT "Compiling ${SRC} -> ${OBJ}"
         )
@@ -41,5 +41,5 @@ add_executable(fake_target ${SRC_FILES}
         src/program_loader.h)
 
 # Pass the same compiler flags so CLion knows how to parse code
-target_compile_options(fake_target PRIVATE -m32 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib)
+target_compile_options(fake_target PRIVATE -m64 -ffreestanding -fno-builtin -fno-stack-protector -nostdlib)
 set_target_properties(fake_target PROPERTIES EXCLUDE_FROM_ALL TRUE) # don't build it by default
