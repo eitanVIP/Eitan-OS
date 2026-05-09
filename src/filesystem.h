@@ -4,7 +4,7 @@
 
 #ifndef FILESYSTEM_H
 #define FILESYSTEM_H
-#include "memory.h"
+#include "allocator.h"
 
 void filesystem_read_sectors(unsigned int lba, void* target, size_t size);
 void filesystem_write_sectors(unsigned int lba, const void* src, size_t size);

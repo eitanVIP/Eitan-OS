@@ -41,7 +41,7 @@
 
 void process_scheduler_init();
 uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level);
-void process_scheduler_next_process(unsigned int* current_regs);
+void process_scheduler_next_process(uint64_t* current_regs);
 bool_t process_scheduler_remove_process(uint32_t pid);
 void process_scheduler_send_signals(uint32_t pid, uint32_t signals);
-void process_scheduler_exit(uint32_t* current_regs);
+void process_scheduler_exit(uint64_t* current_regs);

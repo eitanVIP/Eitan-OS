@@ -4,7 +4,7 @@
 
 #include "eitan_lib.h"
 
-#include "memory.h"
+#include "allocator.h"
 
 double abs(double num) {
     if (num < 0)

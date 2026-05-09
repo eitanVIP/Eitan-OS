@@ -1,8 +1,10 @@
 //
-// Created by eitan on 9/20/25.
+// Created by eitan on 5/10/26.
 //
 
-#pragma once
+#ifndef VMM_H
+#define VMM_H
+
 #include "stdint.h"
 
 typedef struct {
@@ -41,7 +43,4 @@ typedef struct {
     page_entry_t entries[512];
 } PageTable;
 
-void memory_heap_init(void);
-void* malloc(size_t size);
-void free(void* ptr);
-void memory_print_blocks();
+#endif //VMM_H

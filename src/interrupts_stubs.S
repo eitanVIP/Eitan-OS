@@ -1,323 +1,189 @@
-; interrupts_stubs.S
-; NASM-style 32-bit stubs for vectors 0..47
-; Each stub pushes its vector number and calls the appropriate C handler.
+bits 64
 
 global setGdt
 global reloadSegments
 global flush_tss
-
-global isr0
-global isr1
-global isr2
-global isr3
-global isr4
-global isr5
-global isr6
-global isr7
-global isr8
-global isr9
-global isr10
-global isr11
-global isr12
-global isr13
-global isr14
-global isr15
-global isr16
-global isr17
-global isr18
-global isr19
-global isr20
-global isr21
-global isr22
-global isr23
-global isr24
-global isr25
-global isr26
-global isr27
-global isr28
-global isr29
-global isr30
-global isr31
-
-global irq0
-global irq1
-global irq2
-global irq3
-global irq4
-global irq5
-global irq6
-global irq7
-global irq8
-global irq9
-global irq10
-global irq11
-global irq12
-global irq13
-global irq14
-global irq15
-
 global syscall_handler_asm
 
-extern exception_handler_c   ; void exception_handler_c(unsigned int int_no);
-extern irq_handler_c         ; void irq_handler_c(unsigned int int_no);
-extern syscall_handler_c
-extern safe_transition_stack
+global isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7
+global isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15
+global isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23
+global isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31
 
-; ------------------------
-; Exception stubs 0..31
-; ------------------------
-%macro isr 1
-%define VEC %1
-isr%1:
-    pushad
-    push ds
-    push es
+global irq0,  irq1,  irq2,  irq3,  irq4,  irq5,  irq6,  irq7
+global irq8,  irq9,  irq10, irq11, irq12, irq13, irq14, irq15
+
+extern exception_handler_c
+extern irq_handler_c
+extern syscall_handler_c
+
+; ── Stack layout after PUSH_ALL ───────────────────────────────────────────────
+;
+;  [rsp +   0]  r15     <- PUSH_ALL starts here
+;  [rsp +   8]  r14
+;  [rsp +  16]  r13
+;  [rsp +  24]  r12
+;  [rsp +  32]  r11
+;  [rsp +  40]  r10
+;  [rsp +  48]  r9
+;  [rsp +  56]  r8
+;  [rsp +  64]  rbp
+;  [rsp +  72]  rdi
+;  [rsp +  80]  rsi
+;  [rsp +  88]  rdx
+;  [rsp +  96]  rcx
+;  [rsp + 104]  rbx
+;  [rsp + 112]  rax
+;  [rsp + 120]  error_code   (pushed by CPU or dummy 0)
+;  ── CPU-pushed interrupt frame (always present in 64-bit mode) ──────────────
+;  [rsp + 128]  rip
+;  [rsp + 136]  cs
+;  [rsp + 144]  rflags
+;  [rsp + 152]  rsp  (before interrupt)
+;  [rsp + 160]  ss
+
+%define FRAME_CS 136    ; offset of cs from rsp after PUSH_ALL
+
+; ── Macros ────────────────────────────────────────────────────────────────────
+
+%macro PUSH_ALL 0
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
     push fs
     push gs
-
-    push esp
-    push dword VEC
-    call exception_handler_c
-    add esp, 8
-
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    popad
-    iretd
 %endmacro
 
-isr 0
-isr 1
-isr 2
-isr 3
-isr 4
-isr 5
-isr 6
-isr 7
-isr 8
-isr 9
-isr 10
-isr 11
-isr 12
-isr 13
-isr 14
-isr 15
-isr 16
-isr 17
-isr 18
-isr 19
-isr 20
-isr 21
-isr 22
-isr 23
-isr 24
-isr 25
-isr 26
-isr 27
-isr 28
-isr 29
-isr 30
-isr 31
+%macro POP_ALL 0
+    pop gs
+    pop fs
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+%endmacro
 
-; ------------------------
-; IRQ stubs 32..47 (irq0..irq15)
-; ------------------------
-; vector = 32 + IRQ
+; Load kernel data segments (DS/ES mostly ignored in 64-bit but good practice)
+%macro LOAD_KERNEL_SEGS 0
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+%endmacro
+
+; ── Exception stubs (vectors 0–31) ───────────────────────────────────────────
+;
+; Exceptions that push an error code: 8, 10, 11, 12, 13, 14, 17, 21, 29, 30
+; All others get a dummy 0 pushed so the stack layout is always identical.
+
+%macro ISR_NOERRCODE 1
+isr%1:
+    push qword 0        ; dummy error code — keeps cpu_regs_t layout uniform
+    PUSH_ALL
+    LOAD_KERNEL_SEGS
+    mov rdi, %1         ; arg1: vector number
+    mov rsi, rsp        ; arg2: cpu_regs_t *
+    call exception_handler_c
+    POP_ALL
+    add rsp, 8          ; pop error code
+    iretq
+%endmacro
+
+%macro ISR_ERRCODE 1
+isr%1:
+                        ; CPU already pushed the error code
+    PUSH_ALL
+    LOAD_KERNEL_SEGS
+    mov rdi, %1
+    mov rsi, rsp
+    call exception_handler_c
+    POP_ALL
+    add rsp, 8          ; pop error code
+    iretq
+%endmacro
+
+ISR_NOERRCODE 0     ; #DE  divide by zero
+ISR_NOERRCODE 1     ; #DB  debug
+ISR_NOERRCODE 2     ;      NMI
+ISR_NOERRCODE 3     ; #BP  breakpoint
+ISR_NOERRCODE 4     ; #OF  overflow
+ISR_NOERRCODE 5     ; #BR  bound range exceeded
+ISR_NOERRCODE 6     ; #UD  invalid opcode
+ISR_NOERRCODE 7     ; #NM  device not available
+ISR_ERRCODE   8     ; #DF  double fault
+ISR_NOERRCODE 9     ;      coprocessor segment overrun (legacy)
+ISR_ERRCODE   10    ; #TS  invalid TSS
+ISR_ERRCODE   11    ; #NP  segment not present
+ISR_ERRCODE   12    ; #SS  stack-segment fault
+ISR_ERRCODE   13    ; #GP  general protection fault
+ISR_ERRCODE   14    ; #PF  page fault  ← you'll need this for VMM
+ISR_NOERRCODE 15    ;      reserved
+ISR_NOERRCODE 16    ; #MF  x87 floating-point
+ISR_ERRCODE   17    ; #AC  alignment check
+ISR_NOERRCODE 18    ; #MC  machine check
+ISR_NOERRCODE 19    ; #XM  SIMD floating-point
+ISR_NOERRCODE 20    ; #VE  virtualization
+ISR_ERRCODE   21    ; #CP  control protection
+ISR_NOERRCODE 22
+ISR_NOERRCODE 23
+ISR_NOERRCODE 24
+ISR_NOERRCODE 25
+ISR_NOERRCODE 26
+ISR_NOERRCODE 27
+ISR_NOERRCODE 28
+ISR_ERRCODE   29    ; #VC  VMM communication
+ISR_ERRCODE   30    ; #SX  security exception
+ISR_NOERRCODE 31
+
 %macro IRQ_STUB 1
-%define IRQ %1
-%assign VEC 32 + IRQ
+%assign VEC (32 + %1)
 irq%1:
-    pushad
-    push ds
-    push es
-    push fs
-    push gs
+    push qword 0        ; no error code
+    PUSH_ALL
+    LOAD_KERNEL_SEGS
 
-; Check if came from user
-    mov ax, [esp + 52]
-    and ax, 0x03
-    cmp ax, 3
-    je .from_user
+    ; If interrupted user-mode code, swap GS to get kernel GS base
+    test byte [rsp + FRAME_CS], 3
+    jz .call_handler
+    swapgs
 
-.from_kernel
-
-; Copying stack to safe_transition_stack
-    ; mov eax, [esp + 64] ; SS
-    mov eax, 0
-    mov [safe_transition_stack + 16380], eax
-    ; mov eax, [esp + 60] ; userESP
-    mov eax, 0
-    mov [safe_transition_stack + 16376], eax
-    mov eax, [esp + 56] ; EFLAGS
-    mov [safe_transition_stack + 16372], eax
-    mov eax, [esp + 52] ; CS
-    mov [safe_transition_stack + 16368], eax
-    mov eax, [esp + 48] ; EIP
-    mov [safe_transition_stack + 16364], eax
-    mov eax, [esp + 44] ; EAX
-    mov [safe_transition_stack + 16360], eax
-    mov eax, [esp + 40] ; ECX
-    mov [safe_transition_stack + 16356], eax
-    mov eax, [esp + 36] ; EDX
-    mov [safe_transition_stack + 16352], eax
-    mov eax, [esp + 32] ; EBX
-    mov [safe_transition_stack + 16348], eax
-    mov eax, [esp + 28] ; ESP
-    mov [safe_transition_stack + 16344], eax
-    mov eax, [esp + 24] ; EBP
-    mov [safe_transition_stack + 16340], eax
-    mov eax, [esp + 20] ; ESI
-    mov [safe_transition_stack + 16336], eax
-    mov eax, [esp + 16] ; EDI
-    mov [safe_transition_stack + 16332], eax
-    mov eax, [esp + 12] ; DS
-    mov [safe_transition_stack + 16328], eax
-    mov eax, [esp + 8]  ; ES
-    mov [safe_transition_stack + 16324], eax
-    mov eax, [esp + 4]  ; FS
-    mov [safe_transition_stack + 16320], eax
-    mov eax, [esp]      ; GS
-    mov [safe_transition_stack + 16316], eax
-
-; Switch stack pointer to safe_transition_stack
-    mov esp, safe_transition_stack + 16316
-
-; Save kernel esp to clean up stack later
-    mov eax, [esp+28]
-    mov [safe_transition_stack], eax
-    add eax, 12
-    mov [esp+28], eax
-
-    mov eax, 0x10
-    mov ds, eax
-    mov es, eax
-    mov fs, eax
-    mov gs, eax
-
-; C handler call
-    push esp
-    push dword VEC
+.call_handler:
+    mov rdi, VEC        ; arg1: vector number
+    mov rsi, rsp        ; arg2: cpu_regs_t *  (scheduler may modify this)
     call irq_handler_c
-    add esp, 8
 
-; Check if came from user
-    mov ax, [esp + 52]
-    and ax, 0x03
-    cmp ax, 3
-    je .to_user
+    ; Check where we're returning to — may differ from where we came from
+    ; if the scheduler switched tasks and changed regs->cs
+    test byte [rsp + FRAME_CS], 3
+    jz .done
+    swapgs              ; swap back to user GS base
 
-.to_kernel:
-; Move new eip, cs and eflags to kernel stack to iretd from there in order to clean its stack
-    mov eax, [safe_transition_stack] ; Saved kernel esp
-
-    mov ebx, [safe_transition_stack + 16364] ; New EIP
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [safe_transition_stack + 16368] ; New CS
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [safe_transition_stack + 16372] ; New EFLAGS
-    mov [eax], ebx
-
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    popad
-
-    mov esp, [safe_transition_stack] ; Kernel esp
-    iretd
-
-.to_user:
-; Move new eip, cs, eflags, useresp and ss to kernel stack to iretd from there in order to clean its stack
-    mov eax, [safe_transition_stack] ; Saved kernel esp
-    sub eax, 8
-
-    mov ebx, [safe_transition_stack + 16364] ; New EIP
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [safe_transition_stack + 16368] ; New CS
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [safe_transition_stack + 16372] ; New EFLAGS
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [safe_transition_stack + 16376] ; New userESP
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [safe_transition_stack + 16380] ; New SS
-    mov [eax], ebx
-
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    popad
-
-    mov esp, [safe_transition_stack] ; Kernel esp
-    sub esp, 8 ; Move 2 cells because transition to user has 2 more values
-    iretd
-
-.from_user:
-    mov eax, 0x10
-    mov ds, eax
-    mov es, eax
-    mov fs, eax
-    mov gs, eax
-
-; C handler call
-    push esp
-    push dword VEC
-    call irq_handler_c
-    add esp, 8
-
-; Check if going to user
-    mov ax, [esp + 52]
-    and ax, 0x03
-    cmp ax, 3
-    jne .user_to_kernel
-
-.user_to_user:
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    popad
-    iretd
-
-.user_to_kernel:
-    mov eax, [esp + 28]
-    sub eax, 12
-    mov [safe_transition_stack], eax
-
-    mov ebx, [esp + 48] ; New EIP
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [esp + 52] ; New CS
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [esp + 56] ; New EFLAGS
-    mov [eax], ebx
-
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    popad
-
-    mov esp, [safe_transition_stack] ; Kernel esp - 12
-    iretd
-
+.done:
+    POP_ALL
+    add rsp, 8          ; pop error code slot
+    iretq               ; restores rip, cs, rflags, rsp, ss from frame
 %endmacro
 
 IRQ_STUB 0
@@ -337,94 +203,69 @@ IRQ_STUB 13
 IRQ_STUB 14
 IRQ_STUB 15
 
-gdtr DW 0 ; For limit storage
-     DD 0 ; For base storage
+syscall_handler_asm:
+    push qword 0
+    PUSH_ALL
+    LOAD_KERNEL_SEGS
 
+    test byte [rsp + FRAME_CS], 3
+    jz .call_handler
+    swapgs
+
+.call_handler:
+    mov rdi, rsp        ; only arg: cpu_regs_t *
+    call syscall_handler_c
+
+    test byte [rsp + FRAME_CS], 3
+    jz .done
+    swapgs
+
+.done:
+    POP_ALL
+    add rsp, 8
+    iretq
+
+; ── GDT helpers ───────────────────────────────────────────────────────────────
+
+section .data
+align 8
+gdtr:
+    dw 0    ; limit (2 bytes)
+    dq 0    ; base  (8 bytes) — note: gdtr is 10 bytes total
+
+section .text
+
+; setGdt(uint16_t limit, uint64_t base)
+; System V AMD64 ABI: rdi = limit, rsi = base
 setGdt:
-   MOV   AX, [esp + 4]
-   MOV   [gdtr], AX
-   MOV   EAX, [ESP + 8]
-   MOV   [gdtr + 2], EAX
-   LGDT  [gdtr]
-   RET
-
-reloadSegments:
-   ; Reload CS register containing code selector:
-   JMP   0x08:reload_CS ; 0x08 is a stand-in for your code segment
-reload_CS:
-   ; Reload data segment registers:
-   MOV   AX, 0x10 ; 0x10 is a stand-in for your data segment
-   MOV   DS, AX
-   MOV   ES, AX
-   MOV   FS, AX
-   MOV   GS, AX
-   MOV   SS, AX
-   RET
-
-flush_tss:
-    mov ax, (5 * 8) | 3
-    ltr ax
+    mov [gdtr],     di
+    mov [gdtr + 2], rsi
+    lgdt [gdtr]
     ret
 
-syscall_handler_asm:
-    pushad
-    push ds
-    push es
-    push fs
-    push gs
+; reloadSegments()
+; Direct far jumps (jmp seg:off) are not encodable in 64-bit mode.
+; Use the far-return trick: push cs:rip, then retfq.
+reloadSegments:
+    push 0x08                       ; new CS (adjust if your layout differs)
+    lea  rax, [rel .reload_cs]
+    push rax
+    retfq                           ; pops rip then cs — equivalent to far jump
+.reload_cs:
+    mov ax, 0x10                    ; kernel data segment
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    ret
 
-    mov eax, 0x10
-    mov ds, eax
-    mov es, eax
-    mov fs, eax
-    mov gs, eax
-
-    mov eax, [esp+44]
-
-    push esp     ; current_regs
-    push edx     ; Argument 3
-    push ecx     ; Argument 2
-    push ebx     ; Argument 1
-    push eax     ; Syscall ID
-
-    call syscall_handler_c
-    add esp, 20
-
-; Check if going to user
-    mov ax, [esp + 52]
-    and ax, 0x03
-    cmp ax, 3
-    jne .user_to_kernel
-
-.user_to_user:
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    popad
-    iretd
-
-.user_to_kernel:
-    mov eax, [esp + 28]
-    sub eax, 12
-    mov [safe_transition_stack], eax
-
-    mov ebx, [esp + 48] ; New EIP
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [esp + 52] ; New CS
-    mov [eax], ebx
-    add eax, 4
-
-    mov ebx, [esp + 56] ; New EFLAGS
-    mov [eax], ebx
-
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    popad
-
-    mov esp, [safe_transition_stack] ; Kernel esp - 12
-    iretd
+; flush_tss()
+; Loads the TSS selector into the task register.
+; Adjust the selector value to match your GDT layout.
+; TSS is a 16-byte descriptor in 64-bit, so if it's at GDT index 5:
+;   selector = (5 * 8) | 0 = 0x28   (RPL 0, not 3)
+flush_tss:
+    mov ax, 0x28
+    ltr ax
+    ret

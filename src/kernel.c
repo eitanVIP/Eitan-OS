@@ -8,7 +8,7 @@
 #include "filesystem.h"
 #include "gdt.h"
 #include "interrupts.h"
-#include "memory.h"
+#include "allocator.h"
 #include "process_scheduler.h"
 #include "program_loader.h"
 #include "compiled_programs/shell.h"

@@ -5,32 +5,36 @@
 #include "process_scheduler.h"
 
 #include "gdt.h"
-#include "memory.h"
+#include "allocator.h"
 #include "screen.h"
 
 #define STACK_SIZE 16384
 #define STACKS_START 0x1000000
 
 typedef struct {
-    uint32_t gs;
-    uint32_t fs;
-    uint32_t es;
-    uint32_t ds;
-
-    uint32_t edi;
-    uint32_t esi;
-    uint32_t ebp;
-    uint32_t esp;
-    uint32_t ebx;
-    uint32_t edx;
-    uint32_t ecx;
-    uint32_t eax;
-
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t eflags;
-    uint32_t useresp;
-    uint32_t ss;
+    uint64_t fs;
+    uint64_t gs;
+    uint64_t r15;
+    uint64_t r14;
+    uint64_t r13;
+    uint64_t r12;
+    uint64_t r11;
+    uint64_t r10;
+    uint64_t r9;
+    uint64_t r8;
+    uint64_t rbp;
+    uint64_t rdi;
+    uint64_t rsi;
+    uint64_t rdx;
+    uint64_t rcx;
+    uint64_t rbx;
+    uint64_t rax;
+    uint64_t error_code;
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+    uint64_t rsp;
+    uint64_t ss;
 } cpu_state_t;
 
 typedef struct stack {
@@ -60,7 +64,7 @@ void process_scheduler_init() {
 
     current_process = malloc(sizeof(process_t));
     current_process->pid = 0;
-    current_process->regs = (cpu_state_t){ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    current_process->regs = (cpu_state_t){};
     current_process->pending_signals = 0;
     current_process->stack = stack_list;
     current_process->next = current_process;
@@ -100,8 +104,8 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
         new_process->stack = previous_stack->next;
     }
 
-    unsigned short code_segment;
-    unsigned short data_segment;
+    uint16_t code_segment;
+    uint16_t data_segment;
     if (is_kernel_level) {
         code_segment = gdt_get_index(1, 0, 0);
         data_segment = gdt_get_index(2, 0, 0);
@@ -109,9 +113,9 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
         code_segment = gdt_get_index(3, 0, 3);
         data_segment = gdt_get_index(4, 0, 3);
     }
-    new_process->regs = (cpu_state_t){ data_segment, data_segment, data_segment, data_segment,
-        0, 0, 0, (unsigned int)new_process->stack->start, 0, 0, 0, 0, (unsigned int)process_code_start,
-        code_segment, 1 << 1 | 1 << 9 /* bit1 = 1, bit9 = interrupt enabled = 1 */, (unsigned int)new_process->stack->start, data_segment };
+    new_process->regs = (cpu_state_t){ data_segment, data_segment,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        (uint32_t)process_code_start, code_segment, 0x202, (uint32_t)new_process->stack->start, data_segment };
 
     new_process->next = current_process->next;
     current_process->next = new_process;
@@ -169,30 +173,14 @@ bool_t process_scheduler_remove_process(uint32_t pid) {
     return true;
 }
 
-void process_scheduler_exit(uint32_t* current_regs) {
+void process_scheduler_exit(uint64_t* current_regs) {
     process_scheduler_remove_process(current_process->pid);
 
     process_t* kernel_process;
     find_process(0, &kernel_process);
     current_process = kernel_process;
 
-    current_regs[0] = current_process->regs.gs;
-    current_regs[1] = current_process->regs.fs;
-    current_regs[2] = current_process->regs.es;
-    current_regs[3] = current_process->regs.ds;
-    current_regs[4] = current_process->regs.edi;
-    current_regs[5] = current_process->regs.esi;
-    current_regs[6] = current_process->regs.ebp;
-    current_regs[7] = current_process->regs.esp;
-    current_regs[8] = current_process->regs.ebx;
-    current_regs[9] = current_process->regs.edx;
-    current_regs[10] = current_process->regs.ecx;
-    current_regs[11] = current_process->regs.eax;
-    current_regs[12] = current_process->regs.eip;
-    current_regs[13] = current_process->regs.cs;
-    current_regs[14] = current_process->regs.eflags;
-    current_regs[15] = 0;
-    current_regs[16] = 0;
+    *(cpu_state_t *)current_regs = current_process->regs;
 }
 
 void process_scheduler_send_signals(uint32_t pid, uint32_t signals) {
@@ -313,58 +301,12 @@ bool_t handle_signals(process_t* process) {
     return false;
 }
 
-void process_scheduler_next_process(uint32_t* current_regs) {
-    current_process->regs.gs = current_regs[0];
-    current_process->regs.fs = current_regs[1];
-    current_process->regs.es = current_regs[2];
-    current_process->regs.ds = current_regs[3];
-    current_process->regs.edi = current_regs[4];
-    current_process->regs.esi = current_regs[5];
-    current_process->regs.ebp = current_regs[6];
-    current_process->regs.esp = current_regs[7];
-    current_process->regs.ebx = current_regs[8];
-    current_process->regs.edx = current_regs[9];
-    current_process->regs.ecx = current_regs[10];
-    current_process->regs.eax = current_regs[11];
-    current_process->regs.eip = current_regs[12];
-    current_process->regs.cs = current_regs[13];
-    current_process->regs.eflags = current_regs[14];
-
-    // ONLY save useresp and ss if we came from Ring 3
-    if ((current_regs[13] & 0x3) == 3) {
-        current_process->regs.useresp = current_regs[15];
-        current_process->regs.ss = current_regs[16];
-    } else {
-        current_process->regs.useresp = 0;
-        current_process->regs.ss = 0;
-    }
+void process_scheduler_next_process(uint64_t* current_regs) {
+    current_process->regs = *(cpu_state_t *)current_regs;
 
     do {
         current_process = current_process->next;
-    } while (handle_signals(current_process)); // returns true if process was killed
+    } while (handle_signals(current_process));
 
-    current_regs[0] = current_process->regs.gs;
-    current_regs[1] = current_process->regs.fs;
-    current_regs[2] = current_process->regs.es;
-    current_regs[3] = current_process->regs.ds;
-    current_regs[4] = current_process->regs.edi;
-    current_regs[5] = current_process->regs.esi;
-    current_regs[6] = current_process->regs.ebp;
-    current_regs[7] = current_process->regs.esp;
-    current_regs[8] = current_process->regs.ebx;
-    current_regs[9] = current_process->regs.edx;
-    current_regs[10] = current_process->regs.ecx;
-    current_regs[11] = current_process->regs.eax;
-    current_regs[12] = current_process->regs.eip;
-    current_regs[13] = current_process->regs.cs;
-    current_regs[14] = current_process->regs.eflags;
-
-    // ONLY restore useresp and ss if we are GOING to Ring 3
-    if ((current_process->regs.cs & 0x3) == 3) {
-        current_regs[15] = current_process->regs.useresp;
-        current_regs[16] = current_process->regs.ss;
-    } else {
-        current_regs[15] = 0;
-        current_regs[16] = 0;
-    }
+    *(cpu_state_t *)current_regs = current_process->regs;
 }

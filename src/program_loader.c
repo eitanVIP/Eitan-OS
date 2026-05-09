@@ -6,7 +6,7 @@
 
 #include "eitan_lib.h"
 #include "screen.h"
-#include "memory.h"
+#include "allocator.h"
 #include "process_scheduler.h"
 
 #define PROCESS_MEMORY_START 0x2000000

@@ -62,7 +62,7 @@ BITS 64
         sub rsp, 4
 
         ; restore multiboot pointer
-        pop edi
+        pop rdi
 
         extern kernel_main
         call kernel_main
@@ -71,13 +71,6 @@ BITS 64
         cli                  ; disable interrupts
         hlt
         jmp halt
-
-section .bss
-    align 4096
-    pml4:  resb 4096
-    pdpt:  resb 4096
-    pd:    resb 4096
-    ; no PT needed — we use a 2MB huge page
 
 section .data
     align 8
@@ -99,8 +92,12 @@ section .data
     CODE64_SEG equ 0x08         ; offset of code descriptor
     DATA64_SEG equ 0x10         ; offset of data descriptor
 
-section .stack
+section .bss
     resb 16384      ; 16 KB stack
     stack_top:
 
-pmm_bitmap:
+    align 4096
+    pml4:  resb 4096
+    pdpt:  resb 4096
+    pd:    resb 4096
+    ; no PT needed — we use a 2MB huge page

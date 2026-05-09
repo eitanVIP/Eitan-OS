@@ -8,7 +8,7 @@
 #include "eitan_lib.h"
 #include "filesystem.h"
 #include "process_scheduler.h"
-#include "memory.h"
+#include "allocator.h"
 #include "program_loader.h"
 
 #define PIT_CHANNEL0 0x40
