@@ -1,1 +1,2 @@
-gdb build/kernel.elf -ex "set architecture i386:x86-64" -ex "set disassembly-flavor intel" -ex 'target remote localhost:1234' -ex 'b kernel_entry' -ex 'r'
+#gdb build/kernel.elf -ex "set architecture i386:x86-64" -ex "set disassembly-flavor intel" -ex 'target remote localhost:1234' -ex 'b kernel_entry' -ex 'r'
+gdb build/kernel.elf -ex "set architecture i386:x86-64" -ex 'target remote localhost:1234'

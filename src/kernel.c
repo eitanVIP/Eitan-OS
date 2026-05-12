@@ -13,8 +13,41 @@
 #include "program_loader.h"
 #include "compiled_programs/shell.h"
 #include "compiled_programs/test.h"
+#include "limine.h"
 
-void kernel_main(unsigned char* multiboot_pointer) {
+__attribute__((used, section(".limine_requests")))
+static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_framebuffer_request framebuffer_request = {
+    .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
+    .revision = 0
+};
+
+__attribute__((used, section(".limine_requests_start")))
+static volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
+
+__attribute__((used, section(".limine_requests_end")))
+static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
+
+void kernel_main(void) {
+    if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) {
+        while (1) {
+            asm volatile("hlt");
+        }
+    }
+
+    // Ensure we got a framebuffer.
+    if (framebuffer_request.response == null
+     || framebuffer_request.response->framebuffer_count < 1) {
+        while (1) {
+            asm volatile("hlt");
+        }
+     }
+
+    // Fetch the first framebuffer.
+    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
+
     memory_heap_init();
     gdt_init();
     process_scheduler_init();
