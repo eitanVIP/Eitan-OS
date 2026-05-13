@@ -6,7 +6,7 @@
 
 #include "eitan_lib.h"
 #include "io.h"
-#include "screen.h"
+#include "VGA_screen.h"
 
 // ATA protocol IO ports
 #define ATA_DATA           0x1F0
@@ -78,7 +78,7 @@ static void identify_drive() {
 
     unsigned char status = io_inb(ATA_COMMAND_STATUS);
     if (status == 0) {
-        screen_print("Drive does not exist");
+        VGA_screen_print("Drive does not exist");
         return;
     }
 
@@ -88,7 +88,7 @@ static void identify_drive() {
     writable_drive = 1;
     if (io_inb(ATA_LBA_MID) != 0 || io_inb(ATA_LBA_HIGH) != 0) {
         writable_drive = 0;
-        screen_print("Not a writable drive");
+        VGA_screen_print("Not a writable drive");
         return;
     }
 
@@ -107,7 +107,7 @@ static void identify_drive() {
     model[40] = '\0';
     char* strs[] = { "The disk model connected: ", model, "\n" };
     char* msg = str_concats(strs, 3);
-    screen_print(msg);
+    VGA_screen_print(msg);
     free(msg);
 
     // Disk number of sectors
@@ -116,7 +116,7 @@ static void identify_drive() {
     char* size_str = num_to_str((double)sector_count * SECTOR_SIZE);
     char* strs2[] = { "Sector count: ", sector_count_str, ", Disk size: ", size_str, "\n" };
     msg = str_concats(strs2, 5);
-    screen_print(msg);
+    VGA_screen_print(msg);
     free(msg);
     free(sector_count_str);
     free(size_str);
@@ -492,7 +492,7 @@ void filesystem_print_all_entries() {
     file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
     filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
 
-    screen_print("Printing All File Entries:\n");
+    VGA_screen_print("Printing All File Entries:\n");
     for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
         if (file_table[i].magic_number != MAGIC_NUMBER)
             break;
@@ -502,13 +502,13 @@ void filesystem_print_all_entries() {
         char* size = num_to_str(file_table[i].size);
         char* strs[] = { "Id: ", id, "\n", "Name: ", file_table[i].name, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
         char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
-        screen_print(msg);
+        VGA_screen_print(msg);
         free(id);
         free(sector);
         free(size);
         free(msg);
     }
-    screen_print("------------------------------\n");
+    VGA_screen_print("------------------------------\n");
 
     free(file_table);
 }

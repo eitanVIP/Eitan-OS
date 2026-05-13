@@ -3,7 +3,10 @@ project(eitanos C ASM_NASM)
 
 enable_language(ASM_NASM)
 
-file(GLOB SRC_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.c" "${CMAKE_SOURCE_DIR}/src/*.S" "${CMAKE_SOURCE_DIR}/src/compiled_programs/*.c" "${CMAKE_SOURCE_DIR}/src/compiled_programs/*.S")
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/src/*.c"
+        "${CMAKE_SOURCE_DIR}/src/*.S"
+)
 
 set(OBJ_FILES "")
 

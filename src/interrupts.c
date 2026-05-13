@@ -4,7 +4,7 @@
 
 #include "interrupts.h"
 #include "io.h"
-#include "screen.h"
+#include "VGA_screen.h"
 #include "eitan_lib.h"
 #include "filesystem.h"
 #include "process_scheduler.h"
@@ -233,33 +233,33 @@ void send_eoi(unsigned int irq_number) {
 }
 
 void exception_handler_c(unsigned int int_no, unsigned int* regs) {
-    screen_print("CPU Exception: ");
-    screen_println_num(int_no);
+    VGA_screen_print("CPU Exception: ");
+    VGA_screen_println_num(int_no);
 
-    screen_print("GS: ");      screen_println_num(regs[0]);
-    screen_print("FS: ");      screen_println_num(regs[1]);
-    screen_print("ES: ");      screen_println_num(regs[2]);
-    screen_print("DS: ");      screen_println_num(regs[3]);
+    VGA_screen_print("GS: ");      VGA_screen_println_num(regs[0]);
+    VGA_screen_print("FS: ");      VGA_screen_println_num(regs[1]);
+    VGA_screen_print("ES: ");      VGA_screen_println_num(regs[2]);
+    VGA_screen_print("DS: ");      VGA_screen_println_num(regs[3]);
 
-    screen_print("EDI: ");     screen_println_num(regs[4]);
-    screen_print("ESI: ");     screen_println_num(regs[5]);
-    screen_print("EBP: ");     screen_println_num(regs[6]);
-    screen_print("ESP: ");     screen_println_num(regs[7]);
-    screen_print("EBX: ");     screen_println_num(regs[8]);
-    screen_print("EDX: ");     screen_println_num(regs[9]);
-    screen_print("ECX: ");     screen_println_num(regs[10]);
-    screen_print("EAX: ");     screen_println_num(regs[11]);
+    VGA_screen_print("EDI: ");     VGA_screen_println_num(regs[4]);
+    VGA_screen_print("ESI: ");     VGA_screen_println_num(regs[5]);
+    VGA_screen_print("EBP: ");     VGA_screen_println_num(regs[6]);
+    VGA_screen_print("ESP: ");     VGA_screen_println_num(regs[7]);
+    VGA_screen_print("EBX: ");     VGA_screen_println_num(regs[8]);
+    VGA_screen_print("EDX: ");     VGA_screen_println_num(regs[9]);
+    VGA_screen_print("ECX: ");     VGA_screen_println_num(regs[10]);
+    VGA_screen_print("EAX: ");     VGA_screen_println_num(regs[11]);
 
     // The Exception Frame
-    screen_print("Error: ");   screen_println_num(regs[12]);
-    screen_print("EIP: ");     screen_println_num(regs[13]);
-    screen_print("CS: ");      screen_println_num(regs[14]);
-    screen_print("EFLAGS: ");  screen_println_num(regs[15]);
+    VGA_screen_print("Error: ");   VGA_screen_println_num(regs[12]);
+    VGA_screen_print("EIP: ");     VGA_screen_println_num(regs[13]);
+    VGA_screen_print("CS: ");      VGA_screen_println_num(regs[14]);
+    VGA_screen_print("EFLAGS: ");  VGA_screen_println_num(regs[15]);
 
     // Only valid if the exception came from User Mode (Ring 3)
     if ((regs[14] & 0x3) == 3) {
-        screen_print("User ESP: "); screen_println_num(regs[16]);
-        screen_print("SS: ");       screen_println_num(regs[17]);
+        VGA_screen_print("User ESP: "); VGA_screen_println_num(regs[16]);
+        VGA_screen_print("SS: ");       VGA_screen_println_num(regs[17]);
     }
 
     while (1) {
@@ -322,11 +322,11 @@ void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32
 
 
         case 30: // Print string (arg1 pointer to string)
-            screen_print((const char*)arg1);
+            VGA_screen_print((const char*)arg1);
             break;
 
         case 31: // Clear screen
-            screen_clear_screen();
+            VGA_screen_clear_screen();
             break;
 
 

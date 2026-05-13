@@ -8,6 +8,7 @@ LINKER_SCRIPT="linker.ld"
 KERNEL_ELF="$BUILD_DIR/kernel.elf"
 
 ./programs/compile.sh shell
+./fonts/compile.sh zap
 
 # Clean and recreate build dir
 rm -rf $BUILD_DIR
@@ -26,21 +27,6 @@ ld -m elf_x86_64 \
    -o $KERNEL_ELF \
    $BUILD_DIR/kernel.o $(ls $BUILD_DIR/*.o | grep -v "kernel.o")
 
-## Create ISO folder for GRUB
-#mkdir -p $BUILD_DIR/iso/boot/grub
-#cp $KERNEL_ELF $BUILD_DIR/iso/boot/kernel.elf
-#cat > $BUILD_DIR/iso/boot/grub/grub.cfg <<EOF
-#set timeout=0
-#menuentry "eitanos" {
-#    multiboot /boot/kernel.elf
-#    boot
-#}
-#EOF
-#
-## Make ISO with GRUB
-#echo "[*] Creating ISO..."
-#grub-mkrescue -o $BUILD_DIR/eitanos.iso $BUILD_DIR/iso
-
 # Create ISO folder for limine
 curl -L https://github.com/Limine-Bootloader/Limine/releases/latest/download/limine-binary.tar.gz | gunzip | tar -xf -
 mv limine-binary $BUILD_DIR/limine-binary
@@ -54,7 +40,7 @@ cp limine-bios-cd.bin $BUILD_DIR/iso/limine-bios-cd.bin
 cp limine-bios.sys $BUILD_DIR/iso/limine-bios.sys
 cp $KERNEL_ELF $BUILD_DIR/iso/kernel.elf
 
-printf "timeout: 5\n\n/eitanos\nprotocol: limine\npath: boot():/kernel.elf" > $BUILD_DIR/iso/limine.conf
+printf "timeout: 0\n\n/eitanos\nprotocol: limine\npath: boot():/kernel.elf" > $BUILD_DIR/iso/limine.conf
 
 xorriso -as mkisofs -R -r -J -b limine-bios-cd.bin \
         -no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
@@ -65,4 +51,4 @@ $BUILD_DIR/limine-binary/limine bios-install "$BUILD_DIR/eitanos.iso"
 
 # Launch in QEMU
 echo "[*] Launching QEMU..."
-qemu-system-x86_64 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -bios /usr/share/ovmf/OVMF.fd -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio -S -s
+qemu-system-x86_64 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -bios /usr/share/ovmf/OVMF.fd -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio #-S -s

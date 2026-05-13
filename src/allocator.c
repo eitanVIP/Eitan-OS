@@ -3,7 +3,7 @@
 //
 
 #include "allocator.h"
-#include "screen.h"
+#include "VGA_screen.h"
 
 #define HEAP_START 0x500000
 #define HEAP_END   0x1000000
@@ -85,13 +85,13 @@ void free(void* ptr) {
 
 void memory_print_blocks() {
     block_t* curr = free_list;
-    screen_print("Memory Blocks:\n");
+    VGA_screen_print("Memory Blocks:\n");
     while (curr) {
         char* size_str = num_to_str(curr->size);
-        screen_print(size_str);
-        screen_print("\n");
+        VGA_screen_print(size_str);
+        VGA_screen_print("\n");
         free(size_str);
         curr = curr->next;
     }
-    screen_print("Memory Blocks End\n");
+    VGA_screen_print("Memory Blocks End\n");
 }

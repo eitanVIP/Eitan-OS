@@ -5,7 +5,7 @@
 #include "program_loader.h"
 
 #include "eitan_lib.h"
-#include "screen.h"
+#include "VGA_screen.h"
 #include "allocator.h"
 #include "process_scheduler.h"
 
@@ -46,7 +46,7 @@ typedef struct {
 
 void log(const char* msg) {
     char* final_msg = str_concat("Failed to load elf32 program: ", msg);
-    screen_println(final_msg);
+    VGA_screen_println(final_msg);
     free(final_msg);
 }
 

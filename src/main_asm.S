@@ -231,40 +231,34 @@ section .data
 align 8
 gdtr:
     dw 0    ; limit (2 bytes)
-    dq 0    ; base  (8 bytes) — note: gdtr is 10 bytes total
+    dq 0    ; base  (8 bytes)
 
 section .text
-
-; setGdt(uint16_t limit, uint64_t base)
-; System V AMD64 ABI: rdi = limit, rsi = base
 setGdt:
     mov [gdtr],     di
     mov [gdtr + 2], rsi
     lgdt [gdtr]
     ret
 
-; reloadSegments()
-; Direct far jumps (jmp seg:off) are not encodable in 64-bit mode.
-; Use the far-return trick: push cs:rip, then retfq.
 reloadSegments:
-    push 0x08                       ; new CS (adjust if your layout differs)
+    push rbp
+    mov rbp, rsp
+    and rsp, -16
+    push 0x08
     lea  rax, [rel .reload_cs]
     push rax
-    retfq                           ; pops rip then cs — equivalent to far jump
+    retfq
 .reload_cs:
-    mov ax, 0x10                    ; kernel data segment
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
+    mov   ax, 0x10
+    mov   ds, ax
+    mov   es, ax
+    mov   fs, ax
+    mov   gs, ax
+    mov   ss, ax
+    mov   rsp, rbp
+    pop   rbp
     ret
 
-; flush_tss()
-; Loads the TSS selector into the task register.
-; Adjust the selector value to match your GDT layout.
-; TSS is a 16-byte descriptor in 64-bit, so if it's at GDT index 5:
-;   selector = (5 * 8) | 0 = 0x28   (RPL 0, not 3)
 flush_tss:
     mov ax, 0x28
     ltr ax

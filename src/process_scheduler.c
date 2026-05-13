@@ -6,7 +6,7 @@
 
 #include "gdt.h"
 #include "allocator.h"
-#include "screen.h"
+#include "VGA_screen.h"
 
 #define STACK_SIZE 16384
 #define STACKS_START 0x1000000
@@ -107,11 +107,11 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
     uint16_t code_segment;
     uint16_t data_segment;
     if (is_kernel_level) {
-        code_segment = gdt_get_index(1, 0, 0);
-        data_segment = gdt_get_index(2, 0, 0);
+        code_segment = gdt_create_selector(1, 0, 0);
+        data_segment = gdt_create_selector(2, 0, 0);
     } else {
-        code_segment = gdt_get_index(3, 0, 3);
-        data_segment = gdt_get_index(4, 0, 3);
+        code_segment = gdt_create_selector(3, 0, 3);
+        data_segment = gdt_create_selector(4, 0, 3);
     }
     new_process->regs = (cpu_state_t){ data_segment, data_segment,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -212,7 +212,7 @@ bool_t handle_signals(process_t* process) {
     }
     if (sigs & SIG_ABRT) {
         if (process_scheduler_remove_process(process->pid)) {
-            screen_println("SIGABRT");
+            VGA_screen_println("SIGABRT");
             return true;
         }
     }
@@ -224,7 +224,7 @@ bool_t handle_signals(process_t* process) {
     }
     if (sigs & SIG_KILL) {
         if (process_scheduler_remove_process(process->pid)) {
-            screen_println("SIGKILL");
+            VGA_screen_println("SIGKILL");
             return true;
         }
     }

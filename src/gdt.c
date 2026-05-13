@@ -4,32 +4,35 @@
 
 #include "gdt.h"
 #include "stdint.h"
-#include "eitan_lib.h"
 
-extern void setGdt(unsigned short limit, unsigned int base);
+extern void setGdt(uint16_t limit, uint64_t base);
 extern void reloadSegments();
 extern void flush_tss();
 
-struct GDT {
-    unsigned int base;        // 32-bit base
-    unsigned int limit;       // 20-bit limit (stored in 32-bit int)
-    unsigned char access_byte;  // Access byte
-    unsigned char flags;        // Only 4 bits used, but stored in 8-bit int
-};
+typedef struct {
+    uint32_t base;
+    uint32_t limit;         // 20-bit limit (stored in 32-bit int)
+    uint8_t access_byte;  // Access byte
+    uint8_t flags;        // Only 4 bits used, but stored in 8-bit int
+} GDT_entry;
 
 struct tss_entry {
-    uint32_t prev_tss;
-    uint32_t esp0;
-    uint32_t ss0;
-    uint32_t unused[22];
+    uint32_t reserved0;
+    uint64_t rsp0;
+    uint64_t rsp1;
+    uint64_t rsp2;
+    uint64_t reserved1;
+    uint64_t ist[7];        // interrupt stack table
+    uint64_t reserved2;
+    uint16_t reserved3;
     uint16_t iopb_offset;
 } __attribute__((packed));
 
-unsigned char gdt[6 * 8] __attribute__((aligned(8)));
+uint8_t gdt[7 * 8] __attribute__((aligned(8)));
 static struct tss_entry kernel_tss;
 volatile uint8_t safe_transition_stack[16384] __attribute__((aligned(16)));
 
-void encode_gdt_entry(unsigned char *target, struct GDT source) {
+void encode_gdt_entry(uint8_t *target, GDT_entry source) {
     // Check the limit to make sure that it can be encoded
     if (source.limit > 0xFFFFF)
         return;
@@ -53,31 +56,41 @@ void encode_gdt_entry(unsigned char *target, struct GDT source) {
 }
 
 void gdt_init() {
-    encode_gdt_entry(gdt, (struct GDT){ 0, 0, 0, 0 }); // Null desc
-    encode_gdt_entry(gdt + 0x0008, (struct GDT){ 0, 0xFFFFF, 0x9A, 0xC }); // Kernel code
-    encode_gdt_entry(gdt + 0x0010, (struct GDT){ 0, 0xFFFFF, 0x92, 0xC }); // Kernel data
-    encode_gdt_entry(gdt + 0x0018, (struct GDT){ 0, 0xFFFFF, 0xFA, 0xC }); // User code
-    encode_gdt_entry(gdt + 0x0020, (struct GDT){ 0, 0xFFFFF, 0xF2, 0xC }); // User data
+    encode_gdt_entry(gdt, (GDT_entry){ 0, 0, 0, 0 }); // Null desc
+    encode_gdt_entry(gdt + 0x0008, (GDT_entry){ 0, 0xFFFFF, 0x9A, 0xA }); // Kernel code
+    encode_gdt_entry(gdt + 0x0010, (GDT_entry){ 0, 0xFFFFF, 0x92, 0xC }); // Kernel data
+    encode_gdt_entry(gdt + 0x0018, (GDT_entry){ 0, 0xFFFFF, 0xFA, 0xA }); // User code
+    encode_gdt_entry(gdt + 0x0020, (GDT_entry){ 0, 0xFFFFF, 0xF2, 0xC }); // User data
 
     // TSS
-    uint32_t tss_base = (uint32_t)&kernel_tss;
+    uint64_t tss_base = (uint64_t)&kernel_tss;
     uint32_t tss_limit = sizeof(kernel_tss) - 1;
 
-    encode_gdt_entry(gdt + 0x28, (struct GDT){ tss_base, tss_limit, 0x89, 0x0 });
+    encode_gdt_entry(gdt + 0x0028, (GDT_entry){ (uint32_t)tss_base, tss_limit, 0x89, 0x0 });
+    // Upper 32 bits of TSS base go in the next 8 bytes
+    gdt[0x30] = (tss_base >> 32) & 0xFF;
+    gdt[0x31] = (tss_base >> 40) & 0xFF;
+    gdt[0x32] = (tss_base >> 48) & 0xFF;
+    gdt[0x33] = (tss_base >> 56) & 0xFF;
+    // gdt[0x34..0x37] = 0 (reserved, already zero from BSS)
 
     // Initialize TSS
-    memset(&kernel_tss, 0, sizeof(kernel_tss));
-    kernel_tss.ss0 = 0x10; // Kernel Data Segment
-    kernel_tss.esp0 = (uint32_t)&safe_transition_stack[16384];
+    for (int i = 0; i < sizeof(kernel_tss); ++i) {
+        ((uint8_t*)&kernel_tss)[i] = 0;
+    }
+    kernel_tss.rsp0 = (uint64_t)&safe_transition_stack[16384];
 
     // Load the GDT
-    setGdt(6 * 8 - 1, (unsigned int) gdt);
+    setGdt(7 * 8 - 1, (uint64_t) gdt);
     reloadSegments();
 
     // Load the TSS selector into the Task Register
     flush_tss();
 }
 
-unsigned short gdt_get_index(unsigned char index, unsigned char TI, unsigned char RPL) {
+// index - index in gdt table
+// TI - 0 use gdt, 1 use ldt
+// RPL - 0 kernel mode, 3 user mode
+uint16_t gdt_create_selector(unsigned char index, unsigned char TI, unsigned char RPL) {
     return (index << 3) | (TI << 2) | RPL;
 }

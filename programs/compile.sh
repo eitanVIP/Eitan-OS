@@ -23,4 +23,4 @@ xxd -i programs/build/$1/elf.elf > src/compiled_programs/$1.c
 printf '#include "%s.h"\n\n%s\n\nunsigned char* %s_program_get() {\n    return programs_build_%s_elf_elf;\n}' $1 "$(cat src/compiled_programs/$1.c)" $1 $1 > src/compiled_programs/$1.c
 echo "[**] Created c file with binary"
 printf "#pragma once\n\nunsigned char* %s_program_get();" $1 > src/compiled_programs/$1.h
-echo "[**] Create h file"
+echo "[**] Created h file"
