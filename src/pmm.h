@@ -6,6 +6,7 @@
 #define PMM_H
 
 #include "stdint.h"
+#include "limine.h"
 
 typedef struct {
     uint32_t flags;             // which fields below are valid
@@ -68,5 +69,11 @@ typedef struct {
     uint64_t length;     // size of region in bytes
     uint32_t type;       // see below
 } __attribute__((packed)) multiboot_mmap_entry_t;
+
+void pmm_reserve_region(void *start, void *end);
+void pmm_free_region(void *start, void *end);
+uint64_t pmm_alloc_frame();
+void pmm_free_frame(uint64_t frame);
+void pmm_init(struct limine_memmap_request* memmap_request, struct limine_hhdm_request* hhdm_request);
 
 #endif //PMM_H

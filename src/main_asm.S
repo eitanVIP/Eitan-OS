@@ -4,6 +4,7 @@ global setGdt
 global reloadSegments
 global flush_tss
 global syscall_handler_asm
+global enable_sse
 
 global isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7
 global isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15
@@ -17,7 +18,7 @@ extern exception_handler_c
 extern irq_handler_c
 extern syscall_handler_c
 
-; ── Stack layout after PUSH_ALL ───────────────────────────────────────────────
+; ----- Stack layout after PUSH_ALL ----------
 ;
 ;  [rsp +   0]  r15     <- PUSH_ALL starts here
 ;  [rsp +   8]  r14
@@ -35,7 +36,7 @@ extern syscall_handler_c
 ;  [rsp + 104]  rbx
 ;  [rsp + 112]  rax
 ;  [rsp + 120]  error_code   (pushed by CPU or dummy 0)
-;  ── CPU-pushed interrupt frame (always present in 64-bit mode) ──────────────
+;  ----- CPU-pushed interrupt frame (always present in 64-bit mode) ----------
 ;  [rsp + 128]  rip
 ;  [rsp + 136]  cs
 ;  [rsp + 144]  rflags
@@ -44,7 +45,7 @@ extern syscall_handler_c
 
 %define FRAME_CS 136    ; offset of cs from rsp after PUSH_ALL
 
-; ── Macros ────────────────────────────────────────────────────────────────────
+; ----- Macros ----------
 
 %macro PUSH_ALL 0
     push rax
@@ -93,8 +94,7 @@ extern syscall_handler_c
     mov es, ax
 %endmacro
 
-; ── Exception stubs (vectors 0–31) ───────────────────────────────────────────
-;
+; ----- Exception stubs (vectors 0–31) ----------
 ; Exceptions that push an error code: 8, 10, 11, 12, 13, 14, 17, 21, 29, 30
 ; All others get a dummy 0 pushed so the stack layout is always identical.
 
@@ -156,6 +156,8 @@ ISR_NOERRCODE 28
 ISR_ERRCODE   29    ; #VC  VMM communication
 ISR_ERRCODE   30    ; #SX  security exception
 ISR_NOERRCODE 31
+
+; ----- IRQ stubs (vectors 32+) (Context Switching) ----------
 
 %macro IRQ_STUB 1
 %assign VEC (32 + %1)
@@ -225,7 +227,7 @@ syscall_handler_asm:
     add rsp, 8
     iretq
 
-; ── GDT helpers ───────────────────────────────────────────────────────────────
+; ----- GDT helpers ----------
 
 section .data
 align 8
@@ -262,4 +264,24 @@ reloadSegments:
 flush_tss:
     mov ax, 0x28
     ltr ax
+    ret
+
+; ----- Enable SSE ----------
+
+enable_sse:
+    ; --- Step 1: Configure CR0 ---
+    mov rax, cr0
+    ; Clear the EM bit (bit 2) - we don't want to emulate the FPU
+    ; Set the MP bit (bit 1) - monitor co-processor
+    and ax, 0xFFFB      ; Clear bit 2
+    or ax, 0x2          ; Set bit 1
+    mov cr0, rax
+
+    ; --- Step 2: Configure CR4 ---
+    mov rax, cr4
+    ; Set OSFXSR (bit 9) - tells the OS to support FXSAVE/FXRSTOR
+    ; Set OSXMMEXCPT (bit 10) - tells the OS to handle SIMD exceptions
+    or ax, (3 << 9)     ; Sets both bits 9 and 10
+    mov cr4, rax
+
     ret

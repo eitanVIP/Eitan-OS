@@ -84,14 +84,14 @@ void free(void* ptr) {
 }
 
 void memory_print_blocks() {
-    block_t* curr = free_list;
-    VGA_screen_print("Memory Blocks:\n");
-    while (curr) {
-        char* size_str = num_to_str(curr->size);
-        VGA_screen_print(size_str);
-        VGA_screen_print("\n");
-        free(size_str);
-        curr = curr->next;
-    }
-    VGA_screen_print("Memory Blocks End\n");
+    // block_t* curr = free_list;
+    // VGA_screen_print("Memory Blocks:\n");
+    // while (curr) {
+    //     char* size_str = num_to_str(curr->size);
+    //     VGA_screen_print(size_str);
+    //     VGA_screen_print("\n");
+    //     free(size_str);
+    //     curr = curr->next;
+    // }
+    // VGA_screen_print("Memory Blocks End\n");
 }

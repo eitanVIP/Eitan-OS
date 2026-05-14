@@ -4,12 +4,9 @@
 
 #include "pmm.h"
 
+#include "screen.h"
+
 #define FRAME_SIZE 4096
-#define MULTIBOOT_MEMORY_AVAILABLE        1
-#define MULTIBOOT_MEMORY_RESERVED         2
-#define MULTIBOOT_MEMORY_ACPI_RECLAIMABLE 3
-#define MULTIBOOT_MEMORY_NVS              4
-#define MULTIBOOT_MEMORY_BADRAM           5
 
 extern uint8_t kernel_end[];
 
@@ -61,42 +58,64 @@ void pmm_free_frame(uint64_t frame) {
     pmm_set_frame(frame, false);
 }
 
-void pmm_init(multiboot_info_t *mb) {
-    // Place bitmap right after the kernel
-    pmm_bitmap = (uint8_t *)&kernel_end;
+void pmm_init(struct limine_memmap_request* memmap_request, struct limine_hhdm_request* hhdm_request) {
+    struct limine_memmap_response *memmap = memmap_request->response;
+    struct limine_hhdm_response *hhdm = hhdm_request->response;
 
-    // Find top of RAM by walking the mmap
+    // 1. Calculate top of RAM to find bitmap size
     uint64_t top_of_ram = 0;
-    multiboot_mmap_entry_t *entry = (multiboot_mmap_entry_t *)(uint64_t)mb->mmap_addr;
-    multiboot_mmap_entry_t *mmap_end = (multiboot_mmap_entry_t *)(uint64_t)(mb->mmap_addr + mb->mmap_length);
-    while (entry < mmap_end) {
-        if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
-            uint64_t region_top = entry->base_addr + entry->length;
-            if (region_top > top_of_ram)
-                top_of_ram = region_top;
+    for (uint64_t i = 0; i < memmap->entry_count; i++) {
+        if (memmap->entries[i]->type == LIMINE_MEMMAP_USABLE) {
+            uint64_t limit = memmap->entries[i]->base + memmap->entries[i]->length;
+            if (limit > top_of_ram) top_of_ram = limit;
         }
-        entry = (multiboot_mmap_entry_t *)((uint8_t *)entry + entry->size + sizeof(uint32_t));
     }
 
-    total_frames = top_of_ram / FRAME_SIZE;
-    pmm_bitmap_size = ceil_div(total_frames, 8);
+    screen_print("[pmm] found top of ram: <Can't display numbers yet>\n");
 
-    // Assume everything is used
+    total_frames = top_of_ram / 4096;
+    pmm_bitmap_size = (total_frames + 7) / 8;
+
+    screen_print("[pmm] calculated total physical frames: <Can't display numbers yet>\n");
+    screen_print("[pmm] calculated pmm bitmap size: <Can't display numbers yet>\n");
+
+    // Find place for pmm bitmap
+    for (uint64_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap->entries[i];
+        if (entry->type == LIMINE_MEMMAP_USABLE && entry->length >= pmm_bitmap_size) {
+            uint64_t bitmap_phys = entry->base;
+            // The virtual address (via HHDM):
+            pmm_bitmap = (uint8_t *)(bitmap_phys + hhdm->offset);
+
+            // Mark this chunk as no longer usable so the PMM doesn't give it away
+            entry->base += pmm_bitmap_size;
+            entry->length -= pmm_bitmap_size;
+            break;
+        }
+    }
+
+    screen_print("[pmm] found place for pmm bitmap: <Can't display numbers yet>\n");
+
+    // 3. Now this loop will not crash because pmm_bitmap points
+    // into the HHDM which is guaranteed to be mapped and writable.
     for (uint64_t i = 0; i < pmm_bitmap_size; i++) {
         pmm_bitmap[i] = 0xFF;
     }
 
-    // Free only what the mmap says is available
-    entry = (multiboot_mmap_entry_t *)(uint64_t)mb->mmap_addr;
-    while (entry < mmap_end) {
-        if (entry->type == MULTIBOOT_MEMORY_AVAILABLE)
-            pmm_free_region((void *)entry->base_addr,
-                            (void *)(entry->base_addr + entry->length));
-        entry = (multiboot_mmap_entry_t *)((uint8_t *)entry + entry->size + sizeof(uint32_t));
+    // 4. Free USABLE regions
+    for (uint64_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap->entries[i];
+        if (entry->type == LIMINE_MEMMAP_USABLE) {
+            pmm_free_region((void *)entry->base,
+                            (void *)(entry->base + entry->length));
+        }
     }
 
-    // Re-reserve what we're actually using inside available RAM
-    pmm_reserve_region((void *)0,           (void *)0x100000);                    // low memory
-    pmm_reserve_region((void *)&kernel_end, pmm_bitmap + pmm_bitmap_size);        // kernel + bitmap
-    pmm_reserve_region(mb,                  (uint8_t *)mb + sizeof(multiboot_info_t)); // multiboot struct
+    // 5. Re-reserve the bitmap itself
+    // Note: Limine already marks the kernel region as reserved in the mmap,
+    uint64_t bitmap_phys = (uint64_t)pmm_bitmap - hhdm->offset;
+    pmm_reserve_region((void*)bitmap_phys, (void*)(bitmap_phys + pmm_bitmap_size));
+
+    screen_print("[pmm] reserved memory regions\n");
+    screen_print("[pmm] pmm init\n");
 }

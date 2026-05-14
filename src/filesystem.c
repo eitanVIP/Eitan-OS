@@ -61,454 +61,454 @@ static unsigned short sector_count;
 static unsigned char writable_drive;
 
 static void wait_busy() {
-    while (io_inb(ATA_COMMAND_STATUS) & ATA_STATUS_BUSY);
+    // while (io_inb(ATA_COMMAND_STATUS) & ATA_STATUS_BUSY);
 }
 
 static void wait_data_request_ready() {
-    while (!(io_inb(ATA_COMMAND_STATUS) & ATA_STATUS_DATA_REQUEST_READY));
+    // while (!(io_inb(ATA_COMMAND_STATUS) & ATA_STATUS_DATA_REQUEST_READY));
 }
 
 static void identify_drive() {
-    io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE);
-    io_outb(ATA_SECTORS, 0);
-    io_outb(ATA_LBA_LOW, 0);
-    io_outb(ATA_LBA_MID, 0);
-    io_outb(ATA_LBA_HIGH, 0);
-    io_outb(ATA_COMMAND_STATUS, 0xEC); // Command 0xEC: IDENTIFY
-
-    unsigned char status = io_inb(ATA_COMMAND_STATUS);
-    if (status == 0) {
-        VGA_screen_print("Drive does not exist");
-        return;
-    }
-
-    wait_busy();
-
-    // Check if the drive is ATA or something else (like ATAPI/CD-ROM)
-    writable_drive = 1;
-    if (io_inb(ATA_LBA_MID) != 0 || io_inb(ATA_LBA_HIGH) != 0) {
-        writable_drive = 0;
-        VGA_screen_print("Not a writable drive");
-        return;
-    }
-
-    wait_data_request_ready();
-
-    unsigned short data[256];
-    for (int i = 0; i < 256; i++) {
-        data[i] = io_inw(ATA_DATA);
-    }
-
-    // Disk model
-    for (int i = 0; i < 20; i++) {
-        model[i * 2] = data[27 + i] >> 8;
-        model[i * 2 + 1] = data[27 + i] & 0xFF;
-    }
-    model[40] = '\0';
-    char* strs[] = { "The disk model connected: ", model, "\n" };
-    char* msg = str_concats(strs, 3);
-    VGA_screen_print(msg);
-    free(msg);
-
-    // Disk number of sectors
-    memcpy(&sector_count, &data[60], 2);
-    char* sector_count_str = num_to_str(sector_count);
-    char* size_str = num_to_str((double)sector_count * SECTOR_SIZE);
-    char* strs2[] = { "Sector count: ", sector_count_str, ", Disk size: ", size_str, "\n" };
-    msg = str_concats(strs2, 5);
-    VGA_screen_print(msg);
-    free(msg);
-    free(sector_count_str);
-    free(size_str);
+    // io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE);
+    // io_outb(ATA_SECTORS, 0);
+    // io_outb(ATA_LBA_LOW, 0);
+    // io_outb(ATA_LBA_MID, 0);
+    // io_outb(ATA_LBA_HIGH, 0);
+    // io_outb(ATA_COMMAND_STATUS, 0xEC); // Command 0xEC: IDENTIFY
+    //
+    // unsigned char status = io_inb(ATA_COMMAND_STATUS);
+    // if (status == 0) {
+    //     VGA_screen_print("Drive does not exist");
+    //     return;
+    // }
+    //
+    // wait_busy();
+    //
+    // // Check if the drive is ATA or something else (like ATAPI/CD-ROM)
+    // writable_drive = 1;
+    // if (io_inb(ATA_LBA_MID) != 0 || io_inb(ATA_LBA_HIGH) != 0) {
+    //     writable_drive = 0;
+    //     VGA_screen_print("Not a writable drive");
+    //     return;
+    // }
+    //
+    // wait_data_request_ready();
+    //
+    // unsigned short data[256];
+    // for (int i = 0; i < 256; i++) {
+    //     data[i] = io_inw(ATA_DATA);
+    // }
+    //
+    // // Disk model
+    // for (int i = 0; i < 20; i++) {
+    //     model[i * 2] = data[27 + i] >> 8;
+    //     model[i * 2 + 1] = data[27 + i] & 0xFF;
+    // }
+    // model[40] = '\0';
+    // char* strs[] = { "The disk model connected: ", model, "\n" };
+    // char* msg = str_concats(strs, 3);
+    // VGA_screen_print(msg);
+    // free(msg);
+    //
+    // // Disk number of sectors
+    // memcpy(&sector_count, &data[60], 2);
+    // char* sector_count_str = num_to_str(sector_count);
+    // char* size_str = num_to_str((double)sector_count * SECTOR_SIZE);
+    // char* strs2[] = { "Sector count: ", sector_count_str, ", Disk size: ", size_str, "\n" };
+    // msg = str_concats(strs2, 5);
+    // VGA_screen_print(msg);
+    // free(msg);
+    // free(sector_count_str);
+    // free(size_str);
 }
 
 void filesystem_read_sectors(unsigned int lba, void* target, size_t size) {
-    const unsigned char count = ceil((double)size / SECTOR_SIZE);
-
-    if (count < 1 || lba + count >= sector_count)
-        return;
-
-    wait_busy();
-
-    // Set up the Drive/Head Register
-    // 1, Use LBA, 1, Master, LBA
-    // 1  1        1  0       0000
-    // LBA is 28 bits, I put here the last 4: 24-27
-    io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE_LBA | ((lba >> 24) & 0b1111));
-
-    io_outb(ATA_SECTORS, count);                       // Sector count
-    io_outb(ATA_LBA_LOW, (unsigned char)lba);          // LBA Low (bits 0-7)
-    io_outb(ATA_LBA_MID, (unsigned char)(lba >> 8));   // LBA Mid (bits 8-15)
-    io_outb(ATA_LBA_HIGH, (unsigned char)(lba >> 16)); // LBA High (bits 16-23)
-
-    io_outb(ATA_COMMAND_STATUS, 0x20); //0x20 READ command
-
-    unsigned short* t = target;
-    for (int j = 0; j < count; j++) {
-        wait_busy();
-        wait_data_request_ready();
-
-        for (int i = 0; i < 256; i++) {
-            int word_idx = j * 256 + i;
-            int byte_idx = word_idx * 2;
-
-            unsigned short data = io_inw(ATA_DATA);
-            if (byte_idx < size) {
-                if (byte_idx + 1 >= size)
-                    t[word_idx] = data & 0xFF;
-                else
-                    t[word_idx] = data;
-            }
-        }
-    }
+    // const unsigned char count = ceil((double)size / SECTOR_SIZE);
+    //
+    // if (count < 1 || lba + count >= sector_count)
+    //     return;
+    //
+    // wait_busy();
+    //
+    // // Set up the Drive/Head Register
+    // // 1, Use LBA, 1, Master, LBA
+    // // 1  1        1  0       0000
+    // // LBA is 28 bits, I put here the last 4: 24-27
+    // io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE_LBA | ((lba >> 24) & 0b1111));
+    //
+    // io_outb(ATA_SECTORS, count);                       // Sector count
+    // io_outb(ATA_LBA_LOW, (unsigned char)lba);          // LBA Low (bits 0-7)
+    // io_outb(ATA_LBA_MID, (unsigned char)(lba >> 8));   // LBA Mid (bits 8-15)
+    // io_outb(ATA_LBA_HIGH, (unsigned char)(lba >> 16)); // LBA High (bits 16-23)
+    //
+    // io_outb(ATA_COMMAND_STATUS, 0x20); //0x20 READ command
+    //
+    // unsigned short* t = target;
+    // for (int j = 0; j < count; j++) {
+    //     wait_busy();
+    //     wait_data_request_ready();
+    //
+    //     for (int i = 0; i < 256; i++) {
+    //         int word_idx = j * 256 + i;
+    //         int byte_idx = word_idx * 2;
+    //
+    //         unsigned short data = io_inw(ATA_DATA);
+    //         if (byte_idx < size) {
+    //             if (byte_idx + 1 >= size)
+    //                 t[word_idx] = data & 0xFF;
+    //             else
+    //                 t[word_idx] = data;
+    //         }
+    //     }
+    // }
 }
 
 void filesystem_write_sectors(unsigned int lba, const void* src, size_t size) {
-    const unsigned char count = ceil((double)size / SECTOR_SIZE);
-
-    if (!writable_drive || count < 1 || lba + count >= sector_count)
-        return;
-
-    wait_busy();
-
-    // Set up the Drive/Head Register
-    // 1, Use LBA, 1, Master, LBA
-    // 1  1        1  0       0000
-    // LBA is 28 bits, I put here the last 4: 24-27
-    io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE_LBA | ((lba >> 24) & 0b1111));
-
-    io_outb(ATA_SECTORS, count);                       // Sector count
-    io_outb(ATA_LBA_LOW, (unsigned char)lba);          // LBA Low (bits 0-7)
-    io_outb(ATA_LBA_MID, (unsigned char)(lba >> 8));   // LBA Mid (bits 8-15)
-    io_outb(ATA_LBA_HIGH, (unsigned char)(lba >> 16)); // LBA High (bits 16-23)
-
-    io_outb(ATA_COMMAND_STATUS, 0x30); //0x30 WRITE command
-
-    unsigned short* s = src;
-    for (int j = 0; j < count; j++) {
-        wait_busy();
-        wait_data_request_ready();
-
-        for (int i = 0; i < 256; i++) {
-            int word_idx = j * 256 + i;
-            int byte_idx = word_idx * 2;
-
-            if (byte_idx < size) {
-                if (byte_idx + 1 >= size) {
-                    unsigned short data = ((unsigned char*)s)[byte_idx];
-                    io_outw(ATA_DATA, data);
-                }
-                else {
-                    unsigned short data = s[word_idx];
-                    io_outw(ATA_DATA, data);
-                }
-            } else {
-                io_outw(ATA_DATA, 0);
-            }
-        }
-    }
+    // const unsigned char count = ceil((double)size / SECTOR_SIZE);
+    //
+    // if (!writable_drive || count < 1 || lba + count >= sector_count)
+    //     return;
+    //
+    // wait_busy();
+    //
+    // // Set up the Drive/Head Register
+    // // 1, Use LBA, 1, Master, LBA
+    // // 1  1        1  0       0000
+    // // LBA is 28 bits, I put here the last 4: 24-27
+    // io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE_LBA | ((lba >> 24) & 0b1111));
+    //
+    // io_outb(ATA_SECTORS, count);                       // Sector count
+    // io_outb(ATA_LBA_LOW, (unsigned char)lba);          // LBA Low (bits 0-7)
+    // io_outb(ATA_LBA_MID, (unsigned char)(lba >> 8));   // LBA Mid (bits 8-15)
+    // io_outb(ATA_LBA_HIGH, (unsigned char)(lba >> 16)); // LBA High (bits 16-23)
+    //
+    // io_outb(ATA_COMMAND_STATUS, 0x30); //0x30 WRITE command
+    //
+    // unsigned short* s = src;
+    // for (int j = 0; j < count; j++) {
+    //     wait_busy();
+    //     wait_data_request_ready();
+    //
+    //     for (int i = 0; i < 256; i++) {
+    //         int word_idx = j * 256 + i;
+    //         int byte_idx = word_idx * 2;
+    //
+    //         if (byte_idx < size) {
+    //             if (byte_idx + 1 >= size) {
+    //                 unsigned short data = ((unsigned char*)s)[byte_idx];
+    //                 io_outw(ATA_DATA, data);
+    //             }
+    //             else {
+    //                 unsigned short data = s[word_idx];
+    //                 io_outw(ATA_DATA, data);
+    //             }
+    //         } else {
+    //             io_outw(ATA_DATA, 0);
+    //         }
+    //     }
+    // }
 }
 
 static void init_superblock() {
-    superblock_t superblock = {
-        MAGIC_NUMBER,
-        1,
-        sector_count,
-        1,
-        FILE_TABLE_SECTORS,
-        SECTOR_SIZE
-    };
-    filesystem_write_sectors(0, &superblock, sizeof(superblock));
+    // superblock_t superblock = {
+    //     MAGIC_NUMBER,
+    //     1,
+    //     sector_count,
+    //     1,
+    //     FILE_TABLE_SECTORS,
+    //     SECTOR_SIZE
+    // };
+    // filesystem_write_sectors(0, &superblock, sizeof(superblock));
 }
 
 void filesystem_init(void) {
-    identify_drive();
-    init_superblock();
+    // identify_drive();
+    // init_superblock();
 }
 
 bool_t filesystem_read_file(const char* name, uint8_t** data_ptr, uint32_t* data_size) {
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-
-    file_entry_t file_entry = (file_entry_t){};
-    bool_t found = 0;
-
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        file_entry = file_table[i];
-        if (file_entry.magic_number != MAGIC_NUMBER)
-            continue;
-
-        if (strcmp(file_entry.name, name)) {
-            found = 1;
-            break;
-        }
-    }
-
-    free(file_table);
-
-    if (!found)
-        return 0;
-
-    uint8_t* data = malloc(file_entry.size);
-    filesystem_read_sectors(file_entry.start_sector, data, file_entry.size);
-    *data_ptr = data;
-    *data_size = file_entry.size;
-
-    return 1;
+    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+    //
+    // file_entry_t file_entry = (file_entry_t){};
+    // bool_t found = 0;
+    //
+    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+    //     file_entry = file_table[i];
+    //     if (file_entry.magic_number != MAGIC_NUMBER)
+    //         continue;
+    //
+    //     if (strcmp(file_entry.name, name)) {
+    //         found = 1;
+    //         break;
+    //     }
+    // }
+    //
+    // free(file_table);
+    //
+    // if (!found)
+    //     return 0;
+    //
+    // uint8_t* data = malloc(file_entry.size);
+    // filesystem_read_sectors(file_entry.start_sector, data, file_entry.size);
+    // *data_ptr = data;
+    // *data_size = file_entry.size;
+    //
+    // return 1;
 }
 
 static bool_t find_space_for_file(file_entry_t* file_table, size_t file_size, uint32_t* file_start_sector, uint8_t* file_entry_idx) {
-    bool_t are_there_entries = 0;
-
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        file_entry_t entry = file_table[i];
-        if (entry.magic_number != MAGIC_NUMBER)
-            break;
-        are_there_entries = 1;
-
-        // file_entry_t next_entry = {};
-        // bool_t found_next = find_next_entry(i, sector_buf, j, &next_entry);
-
-        uint32_t file_end_sector = entry.start_sector + (uint32_t)ceil((double)entry.size / SECTOR_SIZE);
-        uint32_t space = 0;
-        if (i + 1 < FILE_TABLE_ENTRIES && file_table[i + 1].magic_number == MAGIC_NUMBER) { // Is there next entry
-            file_entry_t next_entry = file_table[i + 1];
-            space = SECTOR_SIZE * (next_entry.start_sector - file_end_sector);
-        } else {
-            space = SECTOR_SIZE * (sector_count - 1 - file_end_sector);
-        }
-
-        if (space >= file_size) {
-            *file_start_sector = file_end_sector;
-            *file_entry_idx = i + 1;
-
-            return 1;
-        }
-    }
-
-    if (!are_there_entries) {
-        if ((sector_count - 1 - FILE_TABLE_ENTRIES) * SECTOR_SIZE >= file_size) {
-            *file_start_sector = FILE_TABLE_ENTRIES + 1;
-            *file_entry_idx = 0;
-
-            return 1;
-        }
-    }
-
-    return 0;
+    // bool_t are_there_entries = 0;
+    //
+    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+    //     file_entry_t entry = file_table[i];
+    //     if (entry.magic_number != MAGIC_NUMBER)
+    //         break;
+    //     are_there_entries = 1;
+    //
+    //     // file_entry_t next_entry = {};
+    //     // bool_t found_next = find_next_entry(i, sector_buf, j, &next_entry);
+    //
+    //     uint32_t file_end_sector = entry.start_sector + (uint32_t)ceil((double)entry.size / SECTOR_SIZE);
+    //     uint32_t space = 0;
+    //     if (i + 1 < FILE_TABLE_ENTRIES && file_table[i + 1].magic_number == MAGIC_NUMBER) { // Is there next entry
+    //         file_entry_t next_entry = file_table[i + 1];
+    //         space = SECTOR_SIZE * (next_entry.start_sector - file_end_sector);
+    //     } else {
+    //         space = SECTOR_SIZE * (sector_count - 1 - file_end_sector);
+    //     }
+    //
+    //     if (space >= file_size) {
+    //         *file_start_sector = file_end_sector;
+    //         *file_entry_idx = i + 1;
+    //
+    //         return 1;
+    //     }
+    // }
+    //
+    // if (!are_there_entries) {
+    //     if ((sector_count - 1 - FILE_TABLE_ENTRIES) * SECTOR_SIZE >= file_size) {
+    //         *file_start_sector = FILE_TABLE_ENTRIES + 1;
+    //         *file_entry_idx = 0;
+    //
+    //         return 1;
+    //     }
+    // }
+    //
+    // return 0;
 }
 
 static void shift_file_entries_forward(file_entry_t* file_table, uint8_t idx_start) {
-    for (uint32_t i = FILE_TABLE_ENTRIES - 1; i > idx_start; i--) {
-        file_table[i] = file_table[i - 1];
-    }
-
-    file_table[idx_start] = (file_entry_t){};
-
-    filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
+    // for (uint32_t i = FILE_TABLE_ENTRIES - 1; i > idx_start; i--) {
+    //     file_table[i] = file_table[i - 1];
+    // }
+    //
+    // file_table[idx_start] = (file_entry_t){};
+    //
+    // filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
 }
 
 static void shift_file_entries_backward(file_entry_t* file_table, uint8_t idx_start) {
-    for (uint32_t i = max(idx_start - 1, 0); i < FILE_TABLE_ENTRIES - 1; i++) {
-        file_table[i] = file_table[i + 1];
-    }
-
-    file_table[FILE_TABLE_ENTRIES - 1] = (file_entry_t){};
-
-    filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
+    // for (uint32_t i = max(idx_start - 1, 0); i < FILE_TABLE_ENTRIES - 1; i++) {
+    //     file_table[i] = file_table[i + 1];
+    // }
+    //
+    // file_table[FILE_TABLE_ENTRIES - 1] = (file_entry_t){};
+    //
+    // filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
 }
 
 bool_t filesystem_write_file(const char* name, const uint8_t* data, size_t size) {
-    uint8_t* _;
-    uint32_t _2;
-    if (filesystem_read_file(name, &_, &_2)) {
-        filesystem_delete_file(name);
-    }
-
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-
-    uint32_t file_start_sector = 0;
-    uint8_t file_entry_idx = 0;
-    if (find_space_for_file(file_table, size, &file_start_sector, &file_entry_idx)) {
-        shift_file_entries_forward(file_table, file_entry_idx);
-
-        file_entry_t new_file_entry = {};
-        new_file_entry.magic_number = MAGIC_NUMBER;
-        new_file_entry.start_sector = file_start_sector;
-        new_file_entry.size = size;
-        memcpy(new_file_entry.name, name, min(strlen(name), 52));
-
-        file_table[file_entry_idx] = new_file_entry;
-
-        filesystem_write_sectors(file_start_sector, data, size);
-        filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
-        free(file_table);
-
-        return 1;
-    }
-
-    return 0;
+    // uint8_t* _;
+    // uint32_t _2;
+    // if (filesystem_read_file(name, &_, &_2)) {
+    //     filesystem_delete_file(name);
+    // }
+    //
+    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+    //
+    // uint32_t file_start_sector = 0;
+    // uint8_t file_entry_idx = 0;
+    // if (find_space_for_file(file_table, size, &file_start_sector, &file_entry_idx)) {
+    //     shift_file_entries_forward(file_table, file_entry_idx);
+    //
+    //     file_entry_t new_file_entry = {};
+    //     new_file_entry.magic_number = MAGIC_NUMBER;
+    //     new_file_entry.start_sector = file_start_sector;
+    //     new_file_entry.size = size;
+    //     memcpy(new_file_entry.name, name, min(strlen(name), 52));
+    //
+    //     file_table[file_entry_idx] = new_file_entry;
+    //
+    //     filesystem_write_sectors(file_start_sector, data, size);
+    //     filesystem_write_sectors(1, file_table, FILE_TABLE_SIZE);
+    //     free(file_table);
+    //
+    //     return 1;
+    // }
+    //
+    // return 0;
 }
 
 bool_t filesystem_delete_file(const char* name) {
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-
-    file_entry_t file_entry = (file_entry_t){};
-    int file_entry_idx = 0;
-    bool_t found = 0;
-
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        file_entry = file_table[i];
-        if (file_entry.magic_number != MAGIC_NUMBER)
-            continue;
-
-        if (strcmp(file_entry.name, name)) {
-            file_entry_idx = i;
-            found = 1;
-            break;
-        }
-    }
-
-    free(file_table);
-
-    if (!found)
-        return 0;
-
-    file_table[file_entry_idx] = (file_entry_t){};
-    shift_file_entries_backward(file_table, file_entry_idx + 1);
-
-    return 1;
+    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+    //
+    // file_entry_t file_entry = (file_entry_t){};
+    // int file_entry_idx = 0;
+    // bool_t found = 0;
+    //
+    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+    //     file_entry = file_table[i];
+    //     if (file_entry.magic_number != MAGIC_NUMBER)
+    //         continue;
+    //
+    //     if (strcmp(file_entry.name, name)) {
+    //         file_entry_idx = i;
+    //         found = 1;
+    //         break;
+    //     }
+    // }
+    //
+    // free(file_table);
+    //
+    // if (!found)
+    //     return 0;
+    //
+    // file_table[file_entry_idx] = (file_entry_t){};
+    // shift_file_entries_backward(file_table, file_entry_idx + 1);
+    //
+    // return 1;
 }
 
 char** filesystem_list_files(const char* path, int* file_count) {
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-
-    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-
-    int count = 0;
-    int path_len = strlen(path);
-
-    int needs_trailing_slash = (path_len > 0 && path[path_len - 1] != '/') ? 1 : 0;
-
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        if (file_table[i].magic_number != MAGIC_NUMBER) continue;
-
-        const char* name = file_table[i].name;
-
-        if (strncmp(name, path, path_len)) {
-            const char* relative_name = name + path_len;
-
-            if (*relative_name == '\0') continue;
-
-            if (strchr(relative_name, '/') == null) {
-                count++;
-            }
-        }
-    }
-
-    // Allocate exact size needed
-    char** files = malloc(count * sizeof(char*));
-
-    int j = 0;
-    for (int i = 0; i < FILE_TABLE_ENTRIES && j < count; i++) {
-        if (file_table[i].magic_number != MAGIC_NUMBER) continue;
-
-        const char* name = file_table[i].name;
-        if (strncmp(name, path, path_len)) {
-            const char* relative_name = name + path_len;
-            if (*relative_name == '\0') continue;
-
-            if (strchr(relative_name, '/') == null) {
-                files[j++] = strdup(name);
-            }
-        }
-    }
-
-    free(file_table);
-    *file_count = j;
-    return files;
+    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    //
+    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+    //
+    // int count = 0;
+    // int path_len = strlen(path);
+    //
+    // int needs_trailing_slash = (path_len > 0 && path[path_len - 1] != '/') ? 1 : 0;
+    //
+    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+    //     if (file_table[i].magic_number != MAGIC_NUMBER) continue;
+    //
+    //     const char* name = file_table[i].name;
+    //
+    //     if (strncmp(name, path, path_len)) {
+    //         const char* relative_name = name + path_len;
+    //
+    //         if (*relative_name == '\0') continue;
+    //
+    //         if (strchr(relative_name, '/') == null) {
+    //             count++;
+    //         }
+    //     }
+    // }
+    //
+    // // Allocate exact size needed
+    // char** files = malloc(count * sizeof(char*));
+    //
+    // int j = 0;
+    // for (int i = 0; i < FILE_TABLE_ENTRIES && j < count; i++) {
+    //     if (file_table[i].magic_number != MAGIC_NUMBER) continue;
+    //
+    //     const char* name = file_table[i].name;
+    //     if (strncmp(name, path, path_len)) {
+    //         const char* relative_name = name + path_len;
+    //         if (*relative_name == '\0') continue;
+    //
+    //         if (strchr(relative_name, '/') == null) {
+    //             files[j++] = strdup(name);
+    //         }
+    //     }
+    // }
+    //
+    // free(file_table);
+    // *file_count = j;
+    // return files;
 }
 
 char** filesystem_list_dirs(const char* path, int* dir_count) {
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    if (!file_table) return null;
-
-    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-
-    int count = 0;
-    int path_len = strlen(path);
-    char** found_dirs = malloc(FILE_TABLE_ENTRIES * sizeof(char*));
-
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        if (file_table[i].magic_number != MAGIC_NUMBER) continue;
-
-        const char* name = file_table[i].name;
-
-        if (strncmp(name, path, path_len)) {
-            const char* relative = name + path_len;
-
-            char* next_slash = strchr(relative, '/');
-
-            if (next_slash != null) {
-                int full_dir_path_len = (next_slash - name) + 1;
-
-                char* dir_full_path = malloc(full_dir_path_len + 1);
-                memcpy(dir_full_path, name, full_dir_path_len);
-                dir_full_path[full_dir_path_len] = '\0';
-
-                bool_t is_duplicate = false;
-                for (int k = 0; k < count; k++) {
-                    // FIX: strcmp returns 0 on match.
-                    if (strcmp(found_dirs[k], dir_full_path)) {
-                        is_duplicate = true;
-                        break;
-                    }
-                }
-
-                if (!is_duplicate) {
-                    found_dirs[count++] = dir_full_path;
-                } else {
-                    free(dir_full_path);
-                }
-            }
-        }
-    }
-
-    free(file_table);
-
-    char** result = malloc(count * sizeof(char*));
-    if (result) {
-        memcpy(result, found_dirs, count * sizeof(char*));
-    }
-
-    free(found_dirs);
-    *dir_count = count;
-    return result;
+    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    // if (!file_table) return null;
+    //
+    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+    //
+    // int count = 0;
+    // int path_len = strlen(path);
+    // char** found_dirs = malloc(FILE_TABLE_ENTRIES * sizeof(char*));
+    //
+    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+    //     if (file_table[i].magic_number != MAGIC_NUMBER) continue;
+    //
+    //     const char* name = file_table[i].name;
+    //
+    //     if (strncmp(name, path, path_len)) {
+    //         const char* relative = name + path_len;
+    //
+    //         char* next_slash = strchr(relative, '/');
+    //
+    //         if (next_slash != null) {
+    //             int full_dir_path_len = (next_slash - name) + 1;
+    //
+    //             char* dir_full_path = malloc(full_dir_path_len + 1);
+    //             memcpy(dir_full_path, name, full_dir_path_len);
+    //             dir_full_path[full_dir_path_len] = '\0';
+    //
+    //             bool_t is_duplicate = false;
+    //             for (int k = 0; k < count; k++) {
+    //                 // FIX: strcmp returns 0 on match.
+    //                 if (strcmp(found_dirs[k], dir_full_path)) {
+    //                     is_duplicate = true;
+    //                     break;
+    //                 }
+    //             }
+    //
+    //             if (!is_duplicate) {
+    //                 found_dirs[count++] = dir_full_path;
+    //             } else {
+    //                 free(dir_full_path);
+    //             }
+    //         }
+    //     }
+    // }
+    //
+    // free(file_table);
+    //
+    // char** result = malloc(count * sizeof(char*));
+    // if (result) {
+    //     memcpy(result, found_dirs, count * sizeof(char*));
+    // }
+    //
+    // free(found_dirs);
+    // *dir_count = count;
+    // return result;
 }
 
 void filesystem_print_all_entries() {
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-
-    VGA_screen_print("Printing All File Entries:\n");
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        if (file_table[i].magic_number != MAGIC_NUMBER)
-            break;
-
-        char* id = num_to_str(i);
-        char* sector = num_to_str(file_table[i].start_sector);
-        char* size = num_to_str(file_table[i].size);
-        char* strs[] = { "Id: ", id, "\n", "Name: ", file_table[i].name, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
-        char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
-        VGA_screen_print(msg);
-        free(id);
-        free(sector);
-        free(size);
-        free(msg);
-    }
-    VGA_screen_print("------------------------------\n");
-
-    free(file_table);
+    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
+    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
+    //
+    // VGA_screen_print("Printing All File Entries:\n");
+    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+    //     if (file_table[i].magic_number != MAGIC_NUMBER)
+    //         break;
+    //
+    //     char* id = num_to_str(i);
+    //     char* sector = num_to_str(file_table[i].start_sector);
+    //     char* size = num_to_str(file_table[i].size);
+    //     char* strs[] = { "Id: ", id, "\n", "Name: ", file_table[i].name, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
+    //     char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
+    //     VGA_screen_print(msg);
+    //     free(id);
+    //     free(sector);
+    //     free(size);
+    //     free(msg);
+    // }
+    // VGA_screen_print("------------------------------\n");
+    //
+    // free(file_table);
 }

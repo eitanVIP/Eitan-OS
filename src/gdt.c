@@ -3,6 +3,8 @@
 //
 
 #include "gdt.h"
+
+#include "screen.h"
 #include "stdint.h"
 
 extern void setGdt(uint16_t limit, uint64_t base);
@@ -62,6 +64,8 @@ void gdt_init() {
     encode_gdt_entry(gdt + 0x0018, (GDT_entry){ 0, 0xFFFFF, 0xFA, 0xA }); // User code
     encode_gdt_entry(gdt + 0x0020, (GDT_entry){ 0, 0xFFFFF, 0xF2, 0xC }); // User data
 
+    screen_print("[gdt] encoded gdt entries\n");
+
     // TSS
     uint64_t tss_base = (uint64_t)&kernel_tss;
     uint32_t tss_limit = sizeof(kernel_tss) - 1;
@@ -80,12 +84,19 @@ void gdt_init() {
     }
     kernel_tss.rsp0 = (uint64_t)&safe_transition_stack[16384];
 
+    screen_print("[gdt] encoded tss entry\n");
+
     // Load the GDT
     setGdt(7 * 8 - 1, (uint64_t) gdt);
+    screen_print("[gdt] loaded gdt\n");
     reloadSegments();
+    screen_print("[gdt] reloaded segments\n");
 
     // Load the TSS selector into the Task Register
     flush_tss();
+    screen_print("[gdt] flushed tss\n");
+
+    screen_print("[gdt] gdt init\n");
 }
 
 // index - index in gdt table

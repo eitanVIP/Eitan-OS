@@ -45,9 +45,9 @@ typedef struct {
 } program_header_entry;
 
 void log(const char* msg) {
-    char* final_msg = str_concat("Failed to load elf32 program: ", msg);
-    VGA_screen_println(final_msg);
-    free(final_msg);
+    // char* final_msg = str_concat("Failed to load elf32 program: ", msg);
+    // VGA_screen_println(final_msg);
+    // free(final_msg);
 }
 
 bool_t check_file(elf32_header header) {

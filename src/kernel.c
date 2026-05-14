@@ -14,7 +14,10 @@
 #include "compiled_programs/shell.h"
 #include "compiled_programs/test.h"
 #include "limine.h"
+#include "pmm.h"
 #include "screen.h"
+
+extern void enable_sse(void);
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -22,6 +25,18 @@ static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
+    .revision = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_memmap_request memmap_request = {
+    .id = LIMINE_MEMMAP_REQUEST_ID,
+    .revision = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST_ID,
     .revision = 0
 };
 
@@ -40,24 +55,23 @@ void kernel_main(void) {
 
     // Ensure we got a framebuffer.
     if (framebuffer_request.response == null
-     || framebuffer_request.response->framebuffer_count < 1) {
+     || framebuffer_request.response->framebuffer_count < 1
+     || memmap_request.response == null
+     || hhdm_request.response == null) {
         while (1) {
             asm volatile("hlt");
         }
      }
 
-    // Fetch the first framebuffer.
-    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
-
-    // memory_heap_init();
+    enable_sse();
+    screen_init(framebuffer_request.response->framebuffers[0]);
     gdt_init();
+    pmm_init(&memmap_request, &hhdm_request);
     // process_scheduler_init();
     // interrupts_init();
 
-    screen_init(framebuffer);
-    // const char* msgs[] = { "Eitan OS Started...\n", "Hello user!\n" };
-    // for (int i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++)
-    //     VGA_screen_print(msgs[i]);
+    screen_print("[kernel] Eitan OS Started...\n");
+    screen_print("[kernel] Hello user!\n");
 
     // filesystem_init();
 
