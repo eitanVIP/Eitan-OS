@@ -29,33 +29,55 @@ bool_t pmm_get_frame(uint64_t frame) {
     return (pmm_bitmap[frame / 8] >> (frame % 8)) & 1;
 }
 
-void pmm_reserve_region(void *start, void *end) {
+bool_t pmm_reserve_region(void *start, void *end) {
     uint64_t frame_start = (uint64_t)start / FRAME_SIZE;
-    uint64_t frame_end   = ((uint64_t)end + FRAME_SIZE - 1) / FRAME_SIZE;
+    uint64_t frame_end   = ceil_div((uint64_t)end, FRAME_SIZE);
+
+    for (uint64_t i = frame_start; i < frame_end; i++)
+        if (pmm_get_frame(i))
+            return false;
+
     for (uint64_t i = frame_start; i < frame_end; i++)
         pmm_set_frame(i, true);
+
+    return true;
 }
 
 void pmm_free_region(void *start, void *end) {
     uint64_t frame_start = (uint64_t)start / FRAME_SIZE;
-    uint64_t frame_end   = ((uint64_t)end + FRAME_SIZE - 1) / FRAME_SIZE;
+    uint64_t frame_end   = ceil_div((uint64_t)end, FRAME_SIZE);
     for (uint64_t i = frame_start; i < frame_end; i++)
         pmm_set_frame(i, false);
 }
 
-uint64_t pmm_alloc_frame() {
+void* pmm_alloc_frame() {
     for (uint64_t i = 0; i < total_frames; i++) {
         if (!pmm_get_frame(i)) {
             pmm_set_frame(i, true);
-            return i;
+            return (void*)(i * FRAME_SIZE);
         }
     }
 
     return null;
 }
 
-void pmm_free_frame(uint64_t frame) {
-    pmm_set_frame(frame, false);
+bool_t pmm_alloc_frame(void* addr) {
+    uint64_t frame = (uint64_t)addr / FRAME_SIZE;
+
+    if (pmm_get_frame(frame))
+        return false;
+
+    pmm_set_frame(frame, true);
+
+    return true;
+}
+
+void pmm_free_frame(void* addr) {
+    pmm_set_frame((uint64_t)addr / FRAME_SIZE, false);
+}
+
+bool_t pmm_is_reserved(void* addr) {
+    return pmm_get_frame((uint64_t)addr / FRAME_SIZE);
 }
 
 void pmm_init(struct limine_memmap_request* memmap_request, struct limine_hhdm_request* hhdm_request) {

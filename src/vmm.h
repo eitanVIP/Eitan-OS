@@ -7,6 +7,24 @@
 
 #include "stdint.h"
 
+// All intermediate table entries (PML4, PDPT, PD levels)
+#define VMM_FLAGS_TABLE   (1ull << 0) | (1ull << 1) | (1ull << 2)
+
+// Kernel page - readable, writable, no user access, no execute
+#define VMM_FLAGS_KERNEL_RW   (1ull << 0) | (1ull << 1) | (1ull << 63)
+
+// Kernel code - readable, executable, no user access, no write
+#define VMM_FLAGS_KERNEL_CODE (1ull << 0)
+
+// User page - readable, writable, user accessible, no execute
+#define VMM_FLAGS_USER_RW   (1ull << 0) | (1ull << 1) | (1ull << 2) | (1ull << 63)
+
+// User code - readable, writable, user accessible
+#define VMM_FLAGS_USER_CODE (1ULL << 0) | (1ULL << 2)
+
+// MMIO - writable, cache disabled, no execute
+#define VMM_FLAGS_MMIO   (1ull << 0) | (1ull << 1) | (1ull << 4) | (1ull << 63)
+
 typedef struct {
     uint64_t present         : 1;   // Bit 0
     uint64_t writeable       : 1;   // Bit 1
@@ -42,5 +60,14 @@ typedef struct {
 typedef struct {
     page_entry_t entries[512];
 } PageTable;
+
+bool_t create_PML4(PML4Table** PML4_ptr);
+void vmm_set_PML4(PML4Table* PML4);
+bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags);
+bool_t vmm_unmap_page(uint64_t virt);
+uint64_t vmm_virt_to_phys(uint64_t virt);
+void vmm_load_cpu();
+bool_t vmm_alloc(void* virt, uint64_t amount, uint64_t flags);
+void vmm_free(void* virt, uint64_t amount);
 
 #endif //VMM_H
