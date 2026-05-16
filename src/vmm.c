@@ -15,19 +15,24 @@ extern uint8_t kernel_end[];
 #define KERNEL_START 0xffffffff80000000
 #define KERNEL_END ((uint64_t)(uint8_t*)kernel_end)
 
-PML4Table* current_PML4;
+static PML4Table* current_PML4;
+static uint64_t hhdm_offset;
+static uint64_t kernel_start_phys;
+static uint64_t kernel_end_phys;
 
 bool_t create_PML4(PML4Table** PML4_ptr) {
-    void* addr = pmm_alloc_frame();
+    uint64_t addr = (uint64_t)pmm_alloc_frame() + hhdm_offset;
     if (addr == null)
         return false;
 
-    memset(addr, 0, PAGE_SIZE);
+    memset((void*)addr, 0, PAGE_SIZE);
     *PML4_ptr = (PML4Table*)addr;
     return true;
 }
 
-PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request) {
+PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request, volatile struct limine_executable_address_request* kernel_address_request) {
+    hhdm_offset = hhdm_request->response->offset;
+
     PML4Table* kernel_PML4 = null;
     bool_t success = create_PML4(&kernel_PML4);
 
@@ -37,41 +42,53 @@ PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request) {
     }
     screen_print("[vmm] created kernel PML4\n");
 
+    kernel_start_phys = kernel_address_request->response->physical_base;
+    kernel_end_phys = KERNEL_END - KERNEL_START + kernel_start_phys;
+
+    PML4Table* limine_pml4;
+    asm volatile("mov %%cr3, %0" : "=r"(limine_pml4));
+    limine_pml4 = (PML4Table*)((uint64_t)limine_pml4 + hhdm_offset);
+    for (int i = 256; i < 512; i++)
+        kernel_PML4->entries[i] = limine_pml4->entries[i];
+
     vmm_set_PML4(kernel_PML4);
 
-    for (uint64_t virt = KERNEL_START; virt < KERNEL_END; virt += PAGE_SIZE) {
-        uint64_t phys = virt - hhdm_request->response->offset;
-        success = vmm_map_page(virt, phys, VMM_FLAGS_KERNEL_ALL);
+    // uint64_t phys = kernel_start_phys;
+    // for (uint64_t virt = KERNEL_START; virt < KERNEL_END; virt += PAGE_SIZE) {
+    //     success = vmm_map_page(virt, phys, VMM_FLAGS_KERNEL_ALL);
+    //
+    //     if (!success) {
+    //         screen_print("[vmm] vmm init failed: can't map kernel\n");
+    //         return null;
+    //     }
+    //
+    //     phys += PAGE_SIZE;
+    // }
+    // screen_print("[vmm] mapped kernel\n");
 
-        if (!success) {
-            screen_print("[vmm] vmm init failed: can't page kernel\n");
-            return null;
-        }
-    }
-    screen_print("[vmm] paged kernel\n");
+    // uint64_t pmm_virt = (uint64_t)pmm_get_bitmap();
+    // for (uint64_t virt = pmm_virt; virt < pmm_virt + pmm_get_bitmap_size(); virt += PAGE_SIZE) {
+    //     uint64_t phys = virt - hhdm_offset;
+    //     success = vmm_map_page(virt, phys, VMM_FLAGS_KERNEL_RW);
+    //
+    //     if (!success) {
+    //         screen_print("[vmm] vmm init failed: can't map pmm bitmap\n");
+    //         return null;
+    //     }
+    // }
+    // screen_print("[vmm] mapped pmm bitmap\n");
 
-    uint64_t pmm_virt = (uint64_t)pmm_get_bitmap();
-    for (uint64_t virt = pmm_virt; virt < pmm_virt + pmm_get_bitmap_size(); virt += PAGE_SIZE) {
-        uint64_t phys = virt - hhdm_request->response->offset;
-        success = vmm_map_page(virt, phys, VMM_FLAGS_KERNEL_RW);
+    // success = vmm_map_page((uint64_t)kernel_PML4, (uint64_t)kernel_PML4 - hhdm_offset, VMM_FLAGS_KERNEL_RW);
+    // if (!success) {
+    //     screen_print("[vmm] vmm init failed: can't map PML4\n");
+    //     return null;
+    // }
 
-        if (!success) {
-            screen_print("[vmm] vmm init failed: can't page pmm bitmap\n");
-            return null;
-        }
-    }
-    screen_print("[vmm] paged pmm bitmap\n");
-
-    success = vmm_map_page((uint64_t)kernel_PML4, (uint64_t)kernel_PML4 - hhdm_request->response->offset, VMM_FLAGS_KERNEL_RW);
-    if (!success) {
-        screen_print("[vmm] vmm init failed: can't page PML4\n");
-        return null;
-    }
-
-    screen_print("[vmm] paged kernel PML4\n");
+    screen_print("[vmm] mapped whole limine mappings to new kernel map\n");
 
     vmm_load_cpu();
     screen_print("[vmm] loaded new kernel PML4 to cpu\n");
+    screen_print("[vmm] vmm init\n");
 
     return kernel_PML4;
 }
@@ -86,42 +103,42 @@ bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags) {
     PageTable* pt_addr;
 
     if (!current_PML4->entries[PML4_INDEX(virt)].present) {
-        pdpt_addr = (PDPTable*)pmm_alloc_frame();
+        pdpt_addr = (PDPTable*)((uint64_t)pmm_alloc_frame() + hhdm_offset);
         if (pdpt_addr == null)
             return false;
         memset(pdpt_addr, 0, PAGE_SIZE);
 
         uint64_t table_flags = VMM_FLAGS_TABLE;
         memcpy(&current_PML4->entries[PML4_INDEX(virt)], &table_flags, sizeof(page_entry_t));
-        current_PML4->entries[PML4_INDEX(virt)].physical_addr = (uint64_t)pdpt_addr >> 12;
+        current_PML4->entries[PML4_INDEX(virt)].physical_addr = ((uint64_t)pdpt_addr - hhdm_offset) >> 12;
     } else {
-        pdpt_addr = (PDPTable*)(current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12);
+        pdpt_addr = (PDPTable*)((current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12) + hhdm_offset);
     }
 
     if (!pdpt_addr->entries[PDPT_INDEX(virt)].present) {
-        pd_addr = (PageDirectory*)pmm_alloc_frame();
+        pd_addr = (PageDirectory*)((uint64_t)pmm_alloc_frame() + hhdm_offset);
         if (pd_addr == null)
             return false;
         memset(pd_addr, 0, PAGE_SIZE);
 
         uint64_t table_flags = VMM_FLAGS_TABLE;
         memcpy(&pdpt_addr->entries[PDPT_INDEX(virt)], &table_flags, sizeof(page_entry_t));
-        pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr = (uint64_t)pd_addr >> 12;
+        pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr = ((uint64_t)pd_addr - hhdm_offset) >> 12;
     } else {
-        pd_addr = (PageDirectory*)(pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12);
+        pd_addr = (PageDirectory*)((pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12) + hhdm_offset);
     }
 
     if (!pd_addr->entries[PD_INDEX(virt)].present) {
-        pt_addr = (PageTable*)pmm_alloc_frame();
+        pt_addr = (PageTable*)((uint64_t)pmm_alloc_frame() + hhdm_offset);
         if (pt_addr == null)
             return false;
         memset(pt_addr, 0, PAGE_SIZE);
 
         uint64_t table_flags = VMM_FLAGS_TABLE;
         memcpy(&pd_addr->entries[PD_INDEX(virt)], &table_flags, sizeof(page_entry_t));
-        pd_addr->entries[PD_INDEX(virt)].physical_addr = (uint64_t)pt_addr >> 12;
+        pd_addr->entries[PD_INDEX(virt)].physical_addr = ((uint64_t)pt_addr - hhdm_offset) >> 12;
     } else {
-        pt_addr = (PageTable*)(pd_addr->entries[PD_INDEX(virt)].physical_addr << 12);
+        pt_addr = (PageTable*)((pd_addr->entries[PD_INDEX(virt)].physical_addr << 12) + hhdm_offset);
     }
 
     if (pt_addr->entries[PT_INDEX(virt)].present)
@@ -252,15 +269,15 @@ bool_t vmm_alloc(void* virt, uint64_t amount, uint64_t flags) {
     uint64_t failed_i = amount;
 
     for (uint64_t i = 0; i < amount; i++) {
-        void* frame_addr = pmm_alloc_frame();
+        uint64_t frame_addr = (uint64_t)pmm_alloc_frame() + hhdm_offset;
         if (frame_addr == null) {
             failed_i = i;
             break;
         }
 
-        bool_t success = vmm_map_page((uint64_t)virt + i * PAGE_SIZE, (uint64_t)frame_addr, flags);
+        bool_t success = vmm_map_page((uint64_t)virt + i * PAGE_SIZE, frame_addr, flags);
         if (!success) {
-            pmm_free_frame(frame_addr);
+            pmm_free_frame((void*)(frame_addr - hhdm_offset));
             failed_i = i;
             break;
         }

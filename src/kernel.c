@@ -43,13 +43,24 @@ static volatile struct limine_hhdm_request hhdm_request = {
     .revision = 0
 };
 
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_executable_address_request kernel_address_request = {
+    .id = LIMINE_EXECUTABLE_ADDRESS_REQUEST_ID,
+    .revision = 0
+};
+
 __attribute__((used, section(".limine_requests_start")))
 static volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
 
+static uint8_t kernel_stack[65536];  // 64KB
+uint8_t* kernel_stack_top = kernel_stack + sizeof(kernel_stack);
+
 void kernel_main(void) {
+    asm volatile("mov %0, %%rsp" :: "r"(kernel_stack_top));
+
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) {
         panic("limine not supported");
     }
@@ -69,7 +80,7 @@ void kernel_main(void) {
     screen_init(framebuffer_request.response->framebuffers[0]);
     gdt_init();
     pmm_init(&memmap_request, &hhdm_request);
-    PML4Table* kernel_PML4 = vmm_init(&hhdm_request);
+    PML4Table* kernel_PML4 = vmm_init(&hhdm_request, &kernel_address_request);
     if (kernel_PML4 == null)
         panic("vmm init crashed");
 

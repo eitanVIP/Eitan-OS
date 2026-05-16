@@ -29,7 +29,7 @@ SECTIONS
 
     .rodata : {
         *(.rodata .rodata.*)
-        *(.note.gnu.build-id)       /* ← merged here, no extra alignment */
+        *(.note.gnu.build-id)
     } :rodata
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
