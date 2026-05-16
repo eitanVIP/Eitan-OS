@@ -6,6 +6,7 @@
 #define VMM_H
 
 #include "stdint.h"
+#include "limine.h"
 
 // All intermediate table entries (PML4, PDPT, PD levels)
 #define VMM_FLAGS_TABLE   (1ull << 0) | (1ull << 1) | (1ull << 2)
@@ -15,6 +16,9 @@
 
 // Kernel code - readable, executable, no user access, no write
 #define VMM_FLAGS_KERNEL_CODE (1ull << 0)
+
+// Kernel all - readable, writeable, executable, no user access
+#define VMM_FLAGS_KERNEL_ALL (1ull << 0) | (1ull << 1)
 
 // User page - readable, writable, user accessible, no execute
 #define VMM_FLAGS_USER_RW   (1ull << 0) | (1ull << 1) | (1ull << 2) | (1ull << 63)
@@ -62,6 +66,7 @@ typedef struct {
 } PageTable;
 
 bool_t create_PML4(PML4Table** PML4_ptr);
+PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request);
 void vmm_set_PML4(PML4Table* PML4);
 bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags);
 bool_t vmm_unmap_page(uint64_t virt);

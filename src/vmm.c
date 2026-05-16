@@ -2,6 +2,7 @@
 
 #include "pmm.h"
 #include "eitan_lib.h"
+#include "screen.h"
 
 #define PAGE_SIZE 4096
 
@@ -9,6 +10,10 @@
 #define PDPT_INDEX(virt)  (((virt) >> 30) & 0x1FF)
 #define PD_INDEX(virt)    (((virt) >> 21) & 0x1FF)
 #define PT_INDEX(virt)    (((virt) >> 12) & 0x1FF)
+
+extern uint8_t kernel_end[];
+#define KERNEL_START 0xffffffff80000000
+#define KERNEL_END ((uint64_t)(uint8_t*)kernel_end)
 
 PML4Table* current_PML4;
 
@@ -20,6 +25,55 @@ bool_t create_PML4(PML4Table** PML4_ptr) {
     memset(addr, 0, PAGE_SIZE);
     *PML4_ptr = (PML4Table*)addr;
     return true;
+}
+
+PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request) {
+    PML4Table* kernel_PML4 = null;
+    bool_t success = create_PML4(&kernel_PML4);
+
+    if (!success) {
+        screen_print("[vmm] vmm init failed: can't create kernel PML4\n");
+        return null;
+    }
+    screen_print("[vmm] created kernel PML4\n");
+
+    vmm_set_PML4(kernel_PML4);
+
+    for (uint64_t virt = KERNEL_START; virt < KERNEL_END; virt += PAGE_SIZE) {
+        uint64_t phys = virt - hhdm_request->response->offset;
+        success = vmm_map_page(virt, phys, VMM_FLAGS_KERNEL_ALL);
+
+        if (!success) {
+            screen_print("[vmm] vmm init failed: can't page kernel\n");
+            return null;
+        }
+    }
+    screen_print("[vmm] paged kernel\n");
+
+    uint64_t pmm_virt = (uint64_t)pmm_get_bitmap();
+    for (uint64_t virt = pmm_virt; virt < pmm_virt + pmm_get_bitmap_size(); virt += PAGE_SIZE) {
+        uint64_t phys = virt - hhdm_request->response->offset;
+        success = vmm_map_page(virt, phys, VMM_FLAGS_KERNEL_RW);
+
+        if (!success) {
+            screen_print("[vmm] vmm init failed: can't page pmm bitmap\n");
+            return null;
+        }
+    }
+    screen_print("[vmm] paged pmm bitmap\n");
+
+    success = vmm_map_page((uint64_t)kernel_PML4, (uint64_t)kernel_PML4 - hhdm_request->response->offset, VMM_FLAGS_KERNEL_RW);
+    if (!success) {
+        screen_print("[vmm] vmm init failed: can't page PML4\n");
+        return null;
+    }
+
+    screen_print("[vmm] paged kernel PML4\n");
+
+    vmm_load_cpu();
+    screen_print("[vmm] loaded new kernel PML4 to cpu\n");
+
+    return kernel_PML4;
 }
 
 void vmm_set_PML4(PML4Table* PML4) {
@@ -74,7 +128,7 @@ bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags) {
         return false;
 
     if (!pmm_is_reserved((void*)phys))
-        if (!pmm_alloc_frame((void*)phys))
+        if (!pmm_reserve_frame((void*)phys))
             return false;
 
     memcpy(&pt_addr->entries[PT_INDEX(virt)], &flags, sizeof(page_entry_t));

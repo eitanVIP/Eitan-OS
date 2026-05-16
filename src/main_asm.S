@@ -5,6 +5,7 @@ global reloadSegments
 global flush_tss
 global syscall_handler_asm
 global enable_sse
+global enable_nxe
 
 global isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7
 global isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15
@@ -284,4 +285,15 @@ enable_sse:
     or ax, (3 << 9)     ; Sets both bits 9 and 10
     mov cr4, rax
 
+    ret
+
+; ----- Enable NXE (no-execute memory pages) ----------
+
+enable_nxe:
+    mov ecx, 0xC0000080    ; Load the EFER MSR address into ECX
+    rdmsr                  ; Read EFER. Low 32 bits go to EAX, high 32 bits to EDX
+
+    or eax, (1 << 11)      ; OR the low 32 bits (EAX) with the NXE bit mask (bit 11)
+
+    wrmsr                  ; Write the updated EAX and EDX back to the EFER MSR
     ret

@@ -9,12 +9,18 @@
 static struct limine_framebuffer* fb = null;
 static uint8_t* current_font = null;
 static bool_t is_current_font_psf2 = false;
+static bool_t is_screen_init = false;
+
+bool_t screen_is_init() {
+    return is_screen_init;
+}
 
 void screen_init(struct limine_framebuffer* framebuffer) {
     fb = framebuffer;
     screen_load_font(zap_font_get());
     screen_clear();
     screen_print("[screen] screen init\n");
+    is_screen_init = true;
 }
 
 void screen_put_pixel(uint32_t x, uint32_t y, uint32_t color) {

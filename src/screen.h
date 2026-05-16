@@ -25,6 +25,7 @@ typedef struct {
     uint32_t width;
 } PSF2_header;
 
+bool_t screen_is_init();
 void screen_init(struct limine_framebuffer* framebuffer);
 void screen_put_pixel(uint32_t x, uint32_t y, uint32_t color);
 uint32_t screen_make_color(uint8_t r, uint8_t g, uint8_t b);

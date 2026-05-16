@@ -8,12 +8,14 @@
 #include "stdint.h"
 #include "limine.h"
 
+uint8_t* pmm_get_bitmap();
+size_t pmm_get_bitmap_size();
 bool_t pmm_reserve_region(void *start, void *end);
 void pmm_free_region(void *start, void *end);
 void* pmm_alloc_frame();
-bool_t pmm_alloc_frame(void* addr);
+bool_t pmm_reserve_frame(void* addr);
 void pmm_free_frame(void* frame);
 bool_t pmm_is_reserved(void* addr);
-void pmm_init(struct limine_memmap_request* memmap_request, struct limine_hhdm_request* hhdm_request);
+void pmm_init(volatile struct limine_memmap_request* memmap_request, volatile struct limine_hhdm_request* hhdm_request);
 
 #endif //PMM_H

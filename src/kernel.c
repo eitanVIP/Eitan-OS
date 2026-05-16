@@ -14,10 +14,13 @@
 #include "compiled_programs/shell.h"
 #include "compiled_programs/test.h"
 #include "limine.h"
+#include "panic.h"
 #include "pmm.h"
 #include "screen.h"
+#include "vmm.h"
 
 extern void enable_sse(void);
+extern void enable_nxe(void);
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -48,25 +51,28 @@ static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARK
 
 void kernel_main(void) {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) {
-        while (1) {
-            asm volatile("hlt");
-        }
+        panic("limine not supported");
+    }
+    if (framebuffer_request.response == null
+        || framebuffer_request.response->framebuffer_count < 1) {
+        panic("invalid limine frame buffer");
+    }
+    if (memmap_request.response == null) {
+        panic("invalid limine memmap");
+    }
+    if (hhdm_request.response == null) {
+        panic("invalid limine hhdmm");
     }
 
-    // Ensure we got a framebuffer.
-    if (framebuffer_request.response == null
-     || framebuffer_request.response->framebuffer_count < 1
-     || memmap_request.response == null
-     || hhdm_request.response == null) {
-        while (1) {
-            asm volatile("hlt");
-        }
-     }
-
     enable_sse();
+    enable_nxe();
     screen_init(framebuffer_request.response->framebuffers[0]);
     gdt_init();
     pmm_init(&memmap_request, &hhdm_request);
+    PML4Table* kernel_PML4 = vmm_init(&hhdm_request);
+    if (kernel_PML4 == null)
+        panic("vmm init crashed");
+
     // process_scheduler_init();
     // interrupts_init();
 

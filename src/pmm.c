@@ -8,14 +8,20 @@
 
 #define FRAME_SIZE 4096
 
-extern uint8_t kernel_end[];
-
 static uint8_t* pmm_bitmap;
 static size_t pmm_bitmap_size;
 static size_t total_frames;
 
 uint64_t ceil_div(uint64_t numerator, uint64_t denominator) {
     return (numerator + denominator - 1) / denominator;
+}
+
+uint8_t* pmm_get_bitmap() {
+    return pmm_bitmap;
+}
+
+size_t pmm_get_bitmap_size() {
+    return pmm_bitmap_size;
 }
 
 void pmm_set_frame(uint64_t frame, bool_t used) {
@@ -31,13 +37,13 @@ bool_t pmm_get_frame(uint64_t frame) {
 
 bool_t pmm_reserve_region(void *start, void *end) {
     uint64_t frame_start = (uint64_t)start / FRAME_SIZE;
-    uint64_t frame_end   = ceil_div((uint64_t)end, FRAME_SIZE);
+    uint64_t frame_end   = (uint64_t)end / FRAME_SIZE;
 
-    for (uint64_t i = frame_start; i < frame_end; i++)
+    for (uint64_t i = frame_start; i <= frame_end; i++)
         if (pmm_get_frame(i))
             return false;
 
-    for (uint64_t i = frame_start; i < frame_end; i++)
+    for (uint64_t i = frame_start; i <= frame_end; i++)
         pmm_set_frame(i, true);
 
     return true;
@@ -45,8 +51,9 @@ bool_t pmm_reserve_region(void *start, void *end) {
 
 void pmm_free_region(void *start, void *end) {
     uint64_t frame_start = (uint64_t)start / FRAME_SIZE;
-    uint64_t frame_end   = ceil_div((uint64_t)end, FRAME_SIZE);
-    for (uint64_t i = frame_start; i < frame_end; i++)
+    uint64_t frame_end   = (uint64_t)end / FRAME_SIZE;
+
+    for (uint64_t i = frame_start; i <= frame_end; i++)
         pmm_set_frame(i, false);
 }
 
@@ -61,7 +68,7 @@ void* pmm_alloc_frame() {
     return null;
 }
 
-bool_t pmm_alloc_frame(void* addr) {
+bool_t pmm_reserve_frame(void* addr) {
     uint64_t frame = (uint64_t)addr / FRAME_SIZE;
 
     if (pmm_get_frame(frame))
@@ -80,7 +87,7 @@ bool_t pmm_is_reserved(void* addr) {
     return pmm_get_frame((uint64_t)addr / FRAME_SIZE);
 }
 
-void pmm_init(struct limine_memmap_request* memmap_request, struct limine_hhdm_request* hhdm_request) {
+void pmm_init(volatile struct limine_memmap_request* memmap_request, volatile struct limine_hhdm_request* hhdm_request) {
     struct limine_memmap_response *memmap = memmap_request->response;
     struct limine_hhdm_response *hhdm = hhdm_request->response;
 
@@ -134,9 +141,11 @@ void pmm_init(struct limine_memmap_request* memmap_request, struct limine_hhdm_r
     }
 
     // 5. Re-reserve the bitmap itself
-    // Note: Limine already marks the kernel region as reserved in the mmap,
     uint64_t bitmap_phys = (uint64_t)pmm_bitmap - hhdm->offset;
-    pmm_reserve_region((void*)bitmap_phys, (void*)(bitmap_phys + pmm_bitmap_size));
+    uint64_t frame_start = bitmap_phys / FRAME_SIZE;
+    uint64_t frame_end   = (bitmap_phys + pmm_bitmap_size) / FRAME_SIZE;
+    for (uint64_t i = frame_start; i <= frame_end; i++)
+        pmm_set_frame(i, true);
 
     screen_print("[pmm] reserved memory regions\n");
     screen_print("[pmm] pmm init\n");
