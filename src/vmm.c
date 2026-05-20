@@ -84,7 +84,7 @@ PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request, volatile 
     //     return null;
     // }
 
-    screen_print("[vmm] mapped whole limine mappings to new kernel map\n");
+    screen_print("[vmm] mapped all limine mappings to new kernel map\n");
 
     vmm_load_cpu();
     screen_print("[vmm] loaded new kernel PML4 to cpu\n");
@@ -262,7 +262,8 @@ uint64_t vmm_virt_to_phys(uint64_t virt) {
 }
 
 void vmm_load_cpu() {
-    asm volatile("mov %0, %%cr3" :: "r"((uint64_t)current_PML4) : "memory");
+    uint64_t PML4_phys = (uint64_t)current_PML4 - hhdm_offset;
+    asm volatile("mov %0, %%cr3" :: "r"(PML4_phys) : "memory");
 }
 
 bool_t vmm_alloc(void* virt, uint64_t amount, uint64_t flags) {
