@@ -6,10 +6,11 @@
 
 #include "gdt.h"
 #include "allocator.h"
-#include "VGA_screen.h"
+#include "screen.h"
+#include "vmm.h"
 
 #define STACK_SIZE 16384
-#define STACKS_START 0x1000000
+#define STACK_START 0x00007FFFFFFFFFFF
 
 typedef struct {
     uint64_t fs;
@@ -37,72 +38,75 @@ typedef struct {
     uint64_t ss;
 } cpu_state_t;
 
-typedef struct stack {
-    void* start;
-    unsigned char free;
-    struct stack *next;
-} stack_t;
+// typedef struct stack {
+//     void* start;
+//     unsigned char free;
+//     struct stack *next;
+// } stack_t;
 
 typedef struct process {
     uint32_t pid;
     cpu_state_t regs;
-    stack_t* stack;
+    // stack_t* stack;
     uint32_t pending_signals;
+    PML4Table* PML4;
 
     struct process* next;
 } process_t;
 
-static int32_t highest_pid = 0;
+static uint32_t highest_pid = 0;
 static process_t* current_process;
-static stack_t* stack_list;
+// static stack_t* stack_list;
+static process_t* kernel_process;
 
-void process_scheduler_init() {
-    stack_list = malloc(sizeof(stack_t));
-    stack_list->start = 0;
-    stack_list->free = 0;
-    stack_list->next = null;
+void process_scheduler_init(PML4Table* kernel_PML4) {
+    // stack_list = malloc(sizeof(stack_t));
+    // stack_list->start = 0;
+    // stack_list->free = 0;
+    // stack_list->next = null;
 
     current_process = malloc(sizeof(process_t));
     current_process->pid = 0;
     current_process->regs = (cpu_state_t){};
     current_process->pending_signals = 0;
-    current_process->stack = stack_list;
+    // current_process->stack = stack_list;
+    current_process->PML4 = kernel_PML4;
     current_process->next = current_process;
+
+    kernel_process = current_process;
 }
 
 uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
-    asm volatile("cli");
-
     process_t* new_process = malloc(sizeof(process_t));
 
     new_process->pid = ++highest_pid;
     new_process->pending_signals = 0;
 
-    stack_t* current_stack = stack_list;
-    stack_t* previous_stack = current_stack;
-    bool_t found = false;
-    uint32_t count = 0;
-    while (current_stack) {
-        if (current_stack->free) {
-            new_process->stack = current_stack;
-            current_stack->free = false;
-
-            found = true;
-            break;
-        }
-
-        count++;
-        previous_stack = current_stack;
-        current_stack = current_stack->next;
-    }
-    if (!found) {
-        previous_stack->next = malloc(sizeof(stack_t));
-        previous_stack->next->free = false;
-        previous_stack->next->start = STACKS_START + (void*)(count * STACK_SIZE);
-        previous_stack->next->next = null;
-
-        new_process->stack = previous_stack->next;
-    }
+    // stack_t* current_stack = stack_list;
+    // stack_t* previous_stack = current_stack;
+    // bool_t found = false;
+    // uint32_t count = 0;
+    // while (current_stack) {
+    //     if (current_stack->free) {
+    //         new_process->stack = current_stack;
+    //         current_stack->free = false;
+    //
+    //         found = true;
+    //         break;
+    //     }
+    //
+    //     count++;
+    //     previous_stack = current_stack;
+    //     current_stack = current_stack->next;
+    // }
+    // if (!found) {
+    //     previous_stack->next = malloc(sizeof(stack_t));
+    //     previous_stack->next->free = false;
+    //     previous_stack->next->start = STACKS_START + (void*)(count * STACK_SIZE);
+    //     previous_stack->next->next = null;
+    //
+    //     new_process->stack = previous_stack->next;
+    // }
 
     uint16_t code_segment;
     uint16_t data_segment;
@@ -115,12 +119,19 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
     }
     new_process->regs = (cpu_state_t){ data_segment, data_segment,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        (uint32_t)process_code_start, code_segment, 0x202, (uint32_t)new_process->stack->start, data_segment };
+        (uint32_t)process_code_start, code_segment, 0x202, STACK_START, data_segment };
+
+    PML4Table* new_PML4;
+    if (!vmm_create_PML4(&new_PML4)) {
+        highest_pid--;
+        free(new_process);
+        return 0;
+    }
+    new_process->PML4 = new_PML4;
 
     new_process->next = current_process->next;
     current_process->next = new_process;
 
-    asm volatile("sti");
     return new_process->pid;
 }
 
@@ -160,15 +171,16 @@ bool_t process_scheduler_remove_process(uint32_t pid) {
     if (pid == 0)
         return false;
 
-    process_t* process;
-    if (!find_previous_process(pid, &process))
+    process_t* prev_process;
+    if (!find_previous_process(pid, &prev_process))
         return false;
 
-    process_t* next_next = process->next->next;
-    process->next->stack->free = true;
-    free(process->next);
-    process->next = next_next;
-    current_process = process;
+    process_t* next_next = prev_process->next->next;
+    // process->next->stack->free = true;
+    // TODO: vmm_unmap_PML4(prev_process->next->PML4);
+    free(prev_process->next);
+    prev_process->next = next_next;
+    current_process = prev_process;
 
     return true;
 }
@@ -212,7 +224,7 @@ bool_t handle_signals(process_t* process) {
     }
     if (sigs & SIG_ABRT) {
         if (process_scheduler_remove_process(process->pid)) {
-            VGA_screen_println("SIGABRT");
+            screen_print("SIGABRT\n");
             return true;
         }
     }
@@ -224,7 +236,7 @@ bool_t handle_signals(process_t* process) {
     }
     if (sigs & SIG_KILL) {
         if (process_scheduler_remove_process(process->pid)) {
-            VGA_screen_println("SIGKILL");
+            screen_print("SIGKILL\n");
             return true;
         }
     }
@@ -306,7 +318,11 @@ void process_scheduler_next_process(uint64_t* current_regs) {
 
     do {
         current_process = current_process->next;
-    } while (handle_signals(current_process));
+    } while (handle_signals(current_process)); // while current process killed by signals
+
+    vmm_set_PML4(current_process->PML4);
+    vmm_copy_kernel_PML4(kernel_process->PML4);
+    vmm_load_cpu();
 
     *(cpu_state_t *)current_regs = current_process->regs;
 }

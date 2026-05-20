@@ -8,6 +8,8 @@
 #include "stdint.h"
 #include "limine.h"
 
+#define FRAME_SIZE 4096
+
 uint8_t* pmm_get_bitmap();
 size_t pmm_get_bitmap_size();
 bool_t pmm_reserve_region(void *start, void *end);

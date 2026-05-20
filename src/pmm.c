@@ -6,8 +6,6 @@
 
 #include "screen.h"
 
-#define FRAME_SIZE 4096
-
 static uint8_t* pmm_bitmap;
 static size_t pmm_bitmap_size;
 static size_t total_frames;

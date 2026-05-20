@@ -8,6 +8,8 @@
 #include "stdint.h"
 #include "limine.h"
 
+#define PAGE_SIZE 4096
+
 // All intermediate table entries (PML4, PDPT, PD levels)
 #define VMM_FLAGS_TABLE   (1ull << 0) | (1ull << 1) | (1ull << 2)
 
@@ -65,14 +67,16 @@ typedef struct {
     page_entry_t entries[512];
 } PageTable;
 
-bool_t create_PML4(PML4Table** PML4_ptr);
+bool_t vmm_create_PML4(PML4Table** PML4_ptr);
 PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request, volatile struct limine_executable_address_request* kernel_address_request);
+void vmm_copy_kernel_PML4(PML4Table* kernel_PML4);
 void vmm_set_PML4(PML4Table* PML4);
 bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags);
 bool_t vmm_unmap_page(uint64_t virt);
+bool_t vmm_is_mapped(uint64_t virt);
 uint64_t vmm_virt_to_phys(uint64_t virt);
 void vmm_load_cpu();
-bool_t vmm_alloc(void* virt, uint64_t amount, uint64_t flags);
-void vmm_free(void* virt, uint64_t amount);
+bool_t vmm_alloc(uint64_t start_virt, uint64_t end_virt, uint64_t flags);
+void vmm_free(uint64_t start_virt, uint64_t end_virt);
 
 #endif //VMM_H

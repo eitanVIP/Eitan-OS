@@ -3,34 +3,66 @@
 //
 
 #include "allocator.h"
-#include "VGA_screen.h"
 
-#define HEAP_START 0x500000
-#define HEAP_END   0x1000000
+#include "pmm.h"
+#include "vmm.h"
+
 #define ALIGN 8
 #define ALIGN_UP(x) (((x) + (ALIGN-1)) & ~(ALIGN-1))
 
 typedef struct block {
-    size_t size;        // size >= sizeof(struct block)
-    struct block* next; // next free block
+    size_t size;
+    struct block* next;
 } block_t;
 
-static block_t* free_list = (block_t*)HEAP_START;
+typedef struct {
+    block_t* free_list;
+    bool_t is_kernel;
+} allocator_data;
 
-void memory_heap_init(void) {
-    free_list->size = HEAP_END - HEAP_START;
-    free_list->next = null;
+static allocator_data* data;
+static block_t* kernel_free_list;
+
+bool_t allocator_heap_init(uint64_t heap_start, uint64_t heap_size, bool_t is_kernel) {
+    data = (allocator_data*)(heap_start - PAGE_SIZE);
+    bool_t success = vmm_alloc((uint64_t)data, (uint64_t)data, VMM_FLAGS_KERNEL_RW);
+    if (!success) return false;
+
+    uint64_t end = heap_start + heap_size - 1;
+    success = vmm_alloc(heap_start, end, is_kernel ? VMM_FLAGS_KERNEL_RW : VMM_FLAGS_USER_RW);
+    if (!success) {
+        vmm_unmap_page(heap_start - PAGE_SIZE);
+        return false;
+    }
+
+    data->free_list = (block_t*)heap_start;
+    data->is_kernel = is_kernel;
+    if (is_kernel)
+        kernel_free_list = (block_t*)heap_start;
+
+    data->free_list->size = heap_size;
+    data->free_list->next = null;
+
+    return true;
 }
 
-void* malloc(size_t size) {
+void* malloc_internal(block_t* free_list, size_t size, bool_t is_kernel) {
     if (size == 0) return null;
+
     size = ALIGN_UP(size + sizeof(block_t)); // include header
     block_t* prev = null;
     block_t* curr = free_list;
 
     while (curr) {
         if (curr->size >= size) {
-            if (curr->size - size >= sizeof(block_t) + ALIGN) {
+            uint64_t alloc_ptr = (uint64_t)curr + sizeof(block_t);
+            if (!vmm_is_mapped(alloc_ptr)) {
+                if (!vmm_alloc(alloc_ptr, alloc_ptr + size - 1, is_kernel ? VMM_FLAGS_KERNEL_RW : VMM_FLAGS_USER_RW)) {
+                    return null;
+                }
+            } // TODO: maybe check pmm too
+
+            if (curr->size - size >= sizeof(block_t) + ALIGN) { // if block big enough for another alloc after this one
                 // split
                 block_t* next = (block_t*)((char*)curr + size);
                 next->size = curr->size - size;
@@ -43,16 +75,23 @@ void* malloc(size_t size) {
                 // use entire block
                 if (prev) prev->next = curr->next; else free_list = curr->next;
             }
-            // return user pointer (after header)
-            return (void*)((char*)curr + sizeof(block_t));
+
+            return (void*)alloc_ptr;
         }
         prev = curr;
         curr = curr->next;
     }
+
     return null; // out of memory
 }
+void* malloc(size_t size) {
+    return malloc_internal(data->free_list, size, false);
+}
+void* malloc_kernel(size_t size) {
+    return malloc_internal(kernel_free_list, size, true);
+}
 
-void free(void* ptr) {
+void free_internal(block_t* free_list, void* ptr) {
     if (!ptr) return;
 
     block_t* blk = (block_t*)((char*)ptr - sizeof(block_t));
@@ -82,8 +121,14 @@ void free(void* ptr) {
         prev->next = blk->next;
     }
 }
+void free(void* ptr) {
+    free_internal(data->free_list, ptr);
+}
+void free_kernel(void* ptr) {
+    free_internal(kernel_free_list, ptr);
+}
 
-void memory_print_blocks() {
+void allocator_print_status() {
     // block_t* curr = free_list;
     // VGA_screen_print("Memory Blocks:\n");
     // while (curr) {

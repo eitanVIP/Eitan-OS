@@ -77,14 +77,16 @@ void kernel_main(void) {
 
     enable_sse();
     enable_nxe();
+
     screen_init(framebuffer_request.response->framebuffers[0]);
     gdt_init();
+
     pmm_init(&memmap_request, &hhdm_request);
     PML4Table* kernel_PML4 = vmm_init(&hhdm_request, &kernel_address_request);
     if (kernel_PML4 == null)
         panic("vmm init crashed");
 
-    // process_scheduler_init();
+    process_scheduler_init();
     // interrupts_init();
 
     screen_print("[kernel] Eitan OS Started...\n");
