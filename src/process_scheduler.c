@@ -9,8 +9,8 @@
 #include "screen.h"
 #include "vmm.h"
 
-#define STACK_SIZE 16384
-#define STACK_START 0x00007FFFFFFFFFFF
+#define STACK_SIZE 0x4000
+#define STACK_START 0x00007fffffffffff
 
 typedef struct {
     uint64_t fs;
@@ -65,6 +65,9 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
     // stack_list->free = 0;
     // stack_list->next = null;
 
+    allocator_heap_init(HEAP_START_KERNEL, HEAP_SIZE, true);
+    screen_print("[process_scheduler] heap init\n");
+
     current_process = malloc(sizeof(process_t));
     current_process->pid = 0;
     current_process->regs = (cpu_state_t){};
@@ -74,6 +77,9 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
     current_process->next = current_process;
 
     kernel_process = current_process;
+
+    screen_print("[process_scheduler] created kernel process\n");
+    screen_print("[process_scheduler] process_scheduler init\n");
 }
 
 uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
@@ -119,7 +125,7 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
     }
     new_process->regs = (cpu_state_t){ data_segment, data_segment,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        (uint32_t)process_code_start, code_segment, 0x202, STACK_START, data_segment };
+        (uint64_t)process_code_start, code_segment, 0x202, STACK_START, data_segment };
 
     PML4Table* new_PML4;
     if (!vmm_create_PML4(&new_PML4)) {
@@ -128,6 +134,12 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
         return 0;
     }
     new_process->PML4 = new_PML4;
+    vmm_copy_kernel_PML4(new_PML4, kernel_process->PML4);
+    vmm_set_PML4(new_PML4);
+    vmm_load_cpu();
+    allocator_heap_init(HEAP_START, HEAP_SIZE, false);
+    vmm_set_PML4(kernel_process->PML4);
+    vmm_load_cpu();
 
     new_process->next = current_process->next;
     current_process->next = new_process;
@@ -166,8 +178,6 @@ bool_t find_previous_process(uint32_t pid, process_t** process_ptr) {
 }
 
 bool_t process_scheduler_remove_process(uint32_t pid) {
-    asm volatile("cli");
-
     if (pid == 0)
         return false;
 
@@ -175,12 +185,21 @@ bool_t process_scheduler_remove_process(uint32_t pid) {
     if (!find_previous_process(pid, &prev_process))
         return false;
 
+    process_t* process = prev_process->next;
     process_t* next_next = prev_process->next->next;
     // process->next->stack->free = true;
-    // TODO: vmm_unmap_PML4(prev_process->next->PML4);
-    free(prev_process->next);
+
+    vmm_set_PML4(process->PML4);
+    vmm_load_cpu();
+    allocator_unmap_heap();
+
+    vmm_set_PML4(kernel_process->PML4);
+    vmm_load_cpu();
+    vmm_unmap_PML4(process->PML4);
+
+    free(process);
     prev_process->next = next_next;
-    current_process = prev_process;
+    current_process = next_next;
 
     return true;
 }
@@ -188,9 +207,9 @@ bool_t process_scheduler_remove_process(uint32_t pid) {
 void process_scheduler_exit(uint64_t* current_regs) {
     process_scheduler_remove_process(current_process->pid);
 
-    process_t* kernel_process;
-    find_process(0, &kernel_process);
-    current_process = kernel_process;
+    // process_t* kernel_process;
+    // find_process(0, &kernel_process);
+    // current_process = kernel_process;
 
     *(cpu_state_t *)current_regs = current_process->regs;
 }
@@ -316,12 +335,15 @@ bool_t handle_signals(process_t* process) {
 void process_scheduler_next_process(uint64_t* current_regs) {
     current_process->regs = *(cpu_state_t *)current_regs;
 
+    vmm_set_PML4(kernel_process->PML4);
+    vmm_load_cpu();
+
     do {
         current_process = current_process->next;
     } while (handle_signals(current_process)); // while current process killed by signals
 
+    vmm_copy_kernel_PML4(current_process->PML4, kernel_process->PML4);
     vmm_set_PML4(current_process->PML4);
-    vmm_copy_kernel_PML4(kernel_process->PML4);
     vmm_load_cpu();
 
     *(cpu_state_t *)current_regs = current_process->regs;

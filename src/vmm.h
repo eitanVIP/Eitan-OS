@@ -68,8 +68,9 @@ typedef struct {
 } PageTable;
 
 bool_t vmm_create_PML4(PML4Table** PML4_ptr);
+void vmm_unmap_PML4(PML4Table* PML4);
 PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request, volatile struct limine_executable_address_request* kernel_address_request);
-void vmm_copy_kernel_PML4(PML4Table* kernel_PML4);
+void vmm_copy_kernel_PML4(PML4Table* to, PML4Table* from);
 void vmm_set_PML4(PML4Table* PML4);
 bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags);
 bool_t vmm_unmap_page(uint64_t virt);

@@ -28,6 +28,37 @@ bool_t vmm_create_PML4(PML4Table** PML4_ptr) {
     return true;
 }
 
+void vmm_unmap_PML4(PML4Table* PML4) {
+    for (int i_PML4 = 0; i_PML4 < 512; i_PML4++) {
+        if (!PML4->entries[i_PML4].present)
+            continue;
+
+        PDPTable* PDPT = (PDPTable*)((PML4->entries[i_PML4].physical_addr << 12) + hhdm_offset);
+
+        for (int i_PDPT = 0; i_PDPT < 512; i_PDPT++) {
+            if (!PDPT->entries[i_PDPT].present)
+                continue;
+
+            PageDirectory* PD = (PageDirectory*)((PDPT->entries[i_PDPT].physical_addr << 12) + hhdm_offset);
+
+            for (int i_PD = 0; i_PD < 512; i_PD++) {
+                if (!PD->entries[i_PD].present)
+                    continue;
+
+                PageTable* PT = (PageTable*)((PD->entries[i_PD].physical_addr << 12) + hhdm_offset);
+
+                vmm_unmap_page((uint64_t)PT);
+            }
+
+            vmm_unmap_page((uint64_t)PD);
+        }
+
+        vmm_unmap_page((uint64_t)PDPT);
+    }
+
+    vmm_unmap_page((uint64_t)PML4);
+}
+
 PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request, volatile struct limine_executable_address_request* kernel_address_request) {
     hhdm_offset = hhdm_request->response->offset;
 
@@ -91,9 +122,9 @@ PML4Table* vmm_init(volatile struct limine_hhdm_request* hhdm_request, volatile 
     return kernel_PML4;
 }
 
-void vmm_copy_kernel_PML4(PML4Table* kernel_PML4) {
+void vmm_copy_kernel_PML4(PML4Table* to, PML4Table* from) {
     for (int i = 256; i < 512; i++)
-        current_PML4->entries[i] = kernel_PML4->entries[i];
+        to->entries[i] = from->entries[i];
 }
 
 void vmm_set_PML4(PML4Table* PML4) {
@@ -164,15 +195,15 @@ bool_t vmm_unmap_page(uint64_t virt) {
 
     if (!current_PML4->entries[PML4_INDEX(virt)].present)
         return false;
-    pdpt_addr = (PDPTable*)(current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12);
+    pdpt_addr = (PDPTable*)((current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pdpt_addr->entries[PDPT_INDEX(virt)].present)
         return false;
-    pd_addr = (PageDirectory*)(pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12);
+    pd_addr = (PageDirectory*)((pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pd_addr->entries[PD_INDEX(virt)].present)
         return false;
-    pt_addr = (PageTable*)(pd_addr->entries[PD_INDEX(virt)].physical_addr << 12);
+    pt_addr = (PageTable*)((pd_addr->entries[PD_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pt_addr->entries[PT_INDEX(virt)].present)
         return false;
@@ -195,15 +226,15 @@ bool_t vmm_is_mapped(uint64_t virt) {
 
     if (!current_PML4->entries[PML4_INDEX(virt)].present)
         return false;
-    pdpt_addr = (PDPTable*)(current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12);
+    pdpt_addr = (PDPTable*)((current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pdpt_addr->entries[PDPT_INDEX(virt)].present)
         return false;
-    pd_addr = (PageDirectory*)(pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12);
+    pd_addr = (PageDirectory*)((pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pd_addr->entries[PD_INDEX(virt)].present)
         return false;
-    pt_addr = (PageTable*)(pd_addr->entries[PD_INDEX(virt)].physical_addr << 12);
+    pt_addr = (PageTable*)((pd_addr->entries[PD_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pt_addr->entries[PT_INDEX(virt)].present)
         return false;
@@ -244,15 +275,15 @@ uint64_t vmm_virt_to_phys(uint64_t virt) {
 
     if (!current_PML4->entries[PML4_INDEX(virt)].present)
         return null;
-    pdpt_addr = (PDPTable*)(current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12);
+    pdpt_addr = (PDPTable*)((current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pdpt_addr->entries[PDPT_INDEX(virt)].present)
         return null;
-    pd_addr = (PageDirectory*)(pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12);
+    pd_addr = (PageDirectory*)((pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pd_addr->entries[PD_INDEX(virt)].present)
         return null;
-    pt_addr = (PageTable*)(pd_addr->entries[PD_INDEX(virt)].physical_addr << 12);
+    pt_addr = (PageTable*)((pd_addr->entries[PD_INDEX(virt)].physical_addr << 12) + hhdm_offset);
 
     if (!pt_addr->entries[PT_INDEX(virt)].present)
         return null;
@@ -274,7 +305,7 @@ bool_t vmm_alloc(uint64_t start_virt, uint64_t end_virt, uint64_t flags) {
     uint64_t failed_i = amount;
 
     for (uint64_t i = 0; i < amount; i++) {
-        uint64_t frame_addr = (uint64_t)pmm_alloc_frame() + hhdm_offset;
+        uint64_t frame_addr = (uint64_t)pmm_alloc_frame();
         if (frame_addr == null) {
             failed_i = i;
             break;
@@ -282,7 +313,7 @@ bool_t vmm_alloc(uint64_t start_virt, uint64_t end_virt, uint64_t flags) {
 
         bool_t success = vmm_map_page(start_virt + i * PAGE_SIZE, frame_addr, flags);
         if (!success) {
-            pmm_free_frame((void*)(frame_addr - hhdm_offset));
+            pmm_free_frame((void*)(frame_addr));
             failed_i = i;
             break;
         }

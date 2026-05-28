@@ -5,6 +5,7 @@
 #include "allocator.h"
 
 #include "pmm.h"
+#include "screen.h"
 #include "vmm.h"
 
 #define ALIGN 8
@@ -26,14 +27,21 @@ static block_t* kernel_free_list;
 bool_t allocator_heap_init(uint64_t heap_start, uint64_t heap_size, bool_t is_kernel) {
     data = (allocator_data*)(heap_start - PAGE_SIZE);
     bool_t success = vmm_alloc((uint64_t)data, (uint64_t)data, VMM_FLAGS_KERNEL_RW);
-    if (!success) return false;
+    if (!success) {
+        screen_print("[allocator] failed to map allocator_data page\n");
+        return false;
+    }
+    screen_print("[allocator] mapped allocator_data page\n");
 
     uint64_t end = heap_start + heap_size - 1;
     success = vmm_alloc(heap_start, end, is_kernel ? VMM_FLAGS_KERNEL_RW : VMM_FLAGS_USER_RW);
     if (!success) {
         vmm_unmap_page(heap_start - PAGE_SIZE);
+        screen_print("[allocator] failed to map heap pages\n");
         return false;
     }
+
+    screen_print("[allocator] mapped heap pages\n");
 
     data->free_list = (block_t*)heap_start;
     data->is_kernel = is_kernel;
@@ -43,7 +51,15 @@ bool_t allocator_heap_init(uint64_t heap_start, uint64_t heap_size, bool_t is_ke
     data->free_list->size = heap_size;
     data->free_list->next = null;
 
+    screen_print("[allocator] allocator heap init\n");
+
     return true;
+}
+
+void allocator_unmap_heap() {
+    for (uint64_t ptr = (uint64_t)data; ptr < (uint64_t)data + PAGE_SIZE + HEAP_SIZE; ptr += PAGE_SIZE) {
+        vmm_unmap_page(ptr);
+    }
 }
 
 void* malloc_internal(block_t* free_list, size_t size, bool_t is_kernel) {

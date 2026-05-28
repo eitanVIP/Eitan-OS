@@ -9,6 +9,7 @@
 #include "filesystem.h"
 #include "process_scheduler.h"
 #include "allocator.h"
+#include "panic.h"
 #include "program_loader.h"
 
 #define PIT_CHANNEL0 0x40
@@ -21,9 +22,9 @@
 #define PIC2_DATA    0xA1
 #define PIC_EOI      0x20
 
-void exception_handler_c(unsigned int int_no, unsigned int* regs);
-void irq_handler_c(unsigned int int_no, unsigned int* regs);
-void syscall_handler_c(unsigned int syscall_id, unsigned int arg1, unsigned int arg2, unsigned int arg3, uint32_t* current_regs);
+void exception_handler_c(uint32_t int_no, uint64_t* regs);
+void irq_handler_c(uint32_t int_no, uint64_t* regs);
+void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t* current_regs);
 
 extern void isr0();  extern void isr1();  extern void isr2();  extern void isr3();
 extern void isr4();  extern void isr5();  extern void isr6();  extern void isr7();
@@ -42,33 +43,38 @@ extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15
 extern void syscall_handler_asm();
 
 typedef struct {
-    unsigned short    isr_low;      // The lower 16 bits of the ISR's address
-    unsigned short    kernel_cs;    // Offset to index in GDT
-    unsigned char     reserved;     // Set to zero
-    unsigned char     attributes;   // Type and attributes; see the IDT page
-    unsigned short    isr_high;     // The higher 16 bits of the ISR's address
+    uint16_t    isr_low;       // The lower 16 bits of the ISR's address
+    uint16_t    kernel_cs;     // GDT Segment Selector
+    uint8_t     ist;           // Bits 0..2 hold the Interrupt Stack Table offset
+    uint8_t     attributes;    // Type and attributes
+    uint16_t    isr_mid;       // The middle 16 bits of the ISR's address
+    uint32_t    isr_high;      // The higher 32 bits of the ISR's address
+    uint32_t    reserved;      // Set to zero
 } __attribute__((packed)) idt_entry_t;
 
 struct idt_ptr {
-    unsigned short limit;
-    unsigned int base;
+    uint16_t limit;
+    uint64_t base;
 } __attribute__((packed));
 
 __attribute__((aligned(0x10)))
 static idt_entry_t idt[256];
 
-void idt_set_descriptor(unsigned char vector, void* isr, unsigned char flags) {
+void idt_set_descriptor(uint8_t vector, void* isr, uint8_t flags) {
     idt_entry_t* descriptor = &idt[vector];
+    uint64_t addr = (uint64_t)isr;
 
-    descriptor->isr_low        = (unsigned int)isr & 0xFFFF;
-    descriptor->kernel_cs      = 0x08; // Offset to index in GDT, kernel code entry
-    descriptor->attributes     = flags;
-    descriptor->isr_high       = (unsigned int)isr >> 16;
-    descriptor->reserved       = 0;
+    descriptor->isr_low    = addr & 0xFFFF;
+    descriptor->kernel_cs  = 0x08;
+    descriptor->ist        = 0;    // 0 means don't use IST (standard behavior)
+    descriptor->attributes = flags;
+    descriptor->isr_mid    = (addr >> 16) & 0xFFFF;
+    descriptor->isr_high   = (addr >> 32) & 0xFFFFFFFF;
+    descriptor->reserved   = 0;
 }
 
-static inline void lidt(void* base, unsigned short size) {
-    struct idt_ptr IDTR = { size, (unsigned int) base };
+static inline void lidt(void* base, uint16_t size) {
+    struct idt_ptr IDTR = { size, (uint64_t) base };
     asm volatile("lidt %0" : : "m"(IDTR));
 }
 
@@ -107,23 +113,19 @@ void interrupts_init() {
     // Must be unmasked for any Slave PIC interrupts (8-15) to work.
     master_mask &= ~(1 << 2);
 
-    // MASK IRQ1 (Keyboard): Bit 1
-    // We ensure this is 1 so your polling loop can read Port 0x60 in peace.
-    master_mask |= (1 << 1);
-
     io_outb(0x21, master_mask);
     io_outb(0xA1, slave_mask);
 
     // 3. PIT Setup (100Hz)
     // ---------------------------------------------------------
-    unsigned short divisor = PIT_FREQ / 100;
+    uint16_t divisor = PIT_FREQ / 100;
     io_outb(PIT_COMMAND, 0x36);             // Command port
     io_outb(PIT_CHANNEL0, divisor & 0xFF);   // Low byte
     io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF); // High byte
 
     // IDT
-    for (int i = 0; i < 256; ++i) {
-        idt_set_descriptor((unsigned char)i, isr0, 0x8E);
+    for (uint8_t i = 0; i < 256; ++i) {
+        idt_set_descriptor(i, isr0, 0x8E);
     }
 
     /* Exceptions 0..31 */
@@ -169,7 +171,6 @@ void interrupts_init() {
     idt_set_descriptor(37, irq5,  0x8E);
     idt_set_descriptor(38, irq6,  0x8E);
     idt_set_descriptor(39, irq7,  0x8E);
-    
     idt_set_descriptor(40, irq8,  0x8E);
     idt_set_descriptor(41, irq9,  0x8E);
     idt_set_descriptor(42, irq10, 0x8E);
@@ -183,47 +184,11 @@ void interrupts_init() {
 
     lidt(idt, sizeof(idt) - 1);
 
-    // // PIC Remap
-    // unsigned char a1, a2;
-    // // Save masks
-    // a1 = io_inb(0x21);
-    // a2 = io_inb(0xA1);
-    // // Starts the initialization sequence (in cascade mode)
-    // io_outb(0x20, 0x11);
-    // io_outb(0xA0, 0x11);
-    // // Set vector offsets
-    // io_outb(0x21, 0x20); // Master PIC vector offset: 32-39
-    // io_outb(0xA1, 0x28); // Slave PIC vector offset: 40-47
-    // // Tell Master PIC about the Slave PIC at IRQ2 (0000 0100)
-    // io_outb(0x21, 4);
-    // // Tell Slave PIC its cascade identity (0000 0010)
-    // io_outb(0xA1, 2);
-    // // Set PICs to 8086/88 mode
-    // io_outb(0x21, 0x01);
-    // io_outb(0xA1, 0x01);
-    // // Restore saved masks
-    // io_outb(0x21, a1);
-    // io_outb(0xA1, a2);
-    //
-    // // Unmask IRQ0 on master PIC so PIT ticks get through
-    // {
-    //     unsigned char mask = io_inb(PIC1_DATA);
-    //     mask &= ~(1 << 0); /* clear bit 0 */
-    //     io_outb(PIC1_DATA, mask);
-    // }
-    //
-    // // PIT
-    // unsigned short divisor = PIT_FREQ / 100; // 100Hz
-    // // 0b00110110: channel 0, low/high byte, mode 3 (square wave)
-    // io_outb(PIT_COMMAND, 0b00110110);
-    // io_outb(PIT_CHANNEL0, divisor & 0xFF);       // low byte
-    // io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF);// high byte
-
     // Enable interrupts
     asm volatile("sti");
 }
 
-void send_eoi(unsigned int irq_number) {
+void send_eoi(uint32_t irq_number) {
     if (irq_number >= 8) {
         // If IRQ came from Slave PIC
         io_outb(PIC2_COMMAND, PIC_EOI); // Send EOI to Slave PIC
@@ -232,58 +197,59 @@ void send_eoi(unsigned int irq_number) {
     io_outb(PIC1_COMMAND, PIC_EOI); // Send EOI to Master PIC
 }
 
-void exception_handler_c(unsigned int int_no, unsigned int* regs) {
-    VGA_screen_print("CPU Exception: ");
-    VGA_screen_println_num(int_no);
-
-    VGA_screen_print("GS: ");      VGA_screen_println_num(regs[0]);
-    VGA_screen_print("FS: ");      VGA_screen_println_num(regs[1]);
-    VGA_screen_print("ES: ");      VGA_screen_println_num(regs[2]);
-    VGA_screen_print("DS: ");      VGA_screen_println_num(regs[3]);
-
-    VGA_screen_print("EDI: ");     VGA_screen_println_num(regs[4]);
-    VGA_screen_print("ESI: ");     VGA_screen_println_num(regs[5]);
-    VGA_screen_print("EBP: ");     VGA_screen_println_num(regs[6]);
-    VGA_screen_print("ESP: ");     VGA_screen_println_num(regs[7]);
-    VGA_screen_print("EBX: ");     VGA_screen_println_num(regs[8]);
-    VGA_screen_print("EDX: ");     VGA_screen_println_num(regs[9]);
-    VGA_screen_print("ECX: ");     VGA_screen_println_num(regs[10]);
-    VGA_screen_print("EAX: ");     VGA_screen_println_num(regs[11]);
-
-    // The Exception Frame
-    VGA_screen_print("Error: ");   VGA_screen_println_num(regs[12]);
-    VGA_screen_print("EIP: ");     VGA_screen_println_num(regs[13]);
-    VGA_screen_print("CS: ");      VGA_screen_println_num(regs[14]);
-    VGA_screen_print("EFLAGS: ");  VGA_screen_println_num(regs[15]);
-
-    // Only valid if the exception came from User Mode (Ring 3)
-    if ((regs[14] & 0x3) == 3) {
-        VGA_screen_print("User ESP: "); VGA_screen_println_num(regs[16]);
-        VGA_screen_print("SS: ");       VGA_screen_println_num(regs[17]);
-    }
-
-    while (1) {
-        asm volatile("hlt");
-    }
+void exception_handler_c(uint32_t int_no, uint64_t* regs) {
+    // VGA_screen_print("CPU Exception: ");
+    // VGA_screen_println_num(int_no);
+    //
+    // VGA_screen_print("GS: ");      VGA_screen_println_num(regs[0]);
+    // VGA_screen_print("FS: ");      VGA_screen_println_num(regs[1]);
+    // VGA_screen_print("ES: ");      VGA_screen_println_num(regs[2]);
+    // VGA_screen_print("DS: ");      VGA_screen_println_num(regs[3]);
+    //
+    // VGA_screen_print("EDI: ");     VGA_screen_println_num(regs[4]);
+    // VGA_screen_print("ESI: ");     VGA_screen_println_num(regs[5]);
+    // VGA_screen_print("EBP: ");     VGA_screen_println_num(regs[6]);
+    // VGA_screen_print("ESP: ");     VGA_screen_println_num(regs[7]);
+    // VGA_screen_print("EBX: ");     VGA_screen_println_num(regs[8]);
+    // VGA_screen_print("EDX: ");     VGA_screen_println_num(regs[9]);
+    // VGA_screen_print("ECX: ");     VGA_screen_println_num(regs[10]);
+    // VGA_screen_print("EAX: ");     VGA_screen_println_num(regs[11]);
+    //
+    // // The Exception Frame
+    // VGA_screen_print("Error: ");   VGA_screen_println_num(regs[12]);
+    // VGA_screen_print("EIP: ");     VGA_screen_println_num(regs[13]);
+    // VGA_screen_print("CS: ");      VGA_screen_println_num(regs[14]);
+    // VGA_screen_print("EFLAGS: ");  VGA_screen_println_num(regs[15]);
+    //
+    // // Only valid if the exception came from User Mode (Ring 3)
+    // if ((regs[14] & 0x3) == 3) {
+    //     VGA_screen_print("User ESP: "); VGA_screen_println_num(regs[16]);
+    //     VGA_screen_print("SS: ");       VGA_screen_println_num(regs[17]);
+    // }
+    //
+    // while (1) {
+    //     asm volatile("hlt");
+    // }
+    panic("exception_handler_c");
 }
 
-void irq_handler_c(unsigned int int_no, unsigned int* regs) {
+void irq_handler_c(uint32_t int_no, uint64_t* regs) {
     if (int_no < 32 || int_no > 47) return;
 
-    unsigned int irq = int_no - 32;
+    uint32_t irq = int_no - 32;
 
     if (irq == 0) {
         process_scheduler_next_process(regs);
     } else if (irq == 1) {
-        // Keyboard shit
+        // Keyboard - disabled in PIC
     } else {
-        // Other IRQs
+        // Other IRQs - disabled in PIC
     }
 
     send_eoi(irq);
 }
 
-void syscall_handler_c(uint32_t syscall_id, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t* current_regs) {
+void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t* current_regs) {
     switch (syscall_id) {
         case 0: // Exit
             process_scheduler_exit(current_regs);
