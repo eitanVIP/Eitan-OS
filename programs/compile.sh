@@ -10,13 +10,13 @@ mkdir -p programs/build/$1
 
 echo "[**] Recreated $1 dir"
 
-nasm -f elf32 programs/boot.S -o programs/build/boot.o
+nasm -f elf64 programs/boot.S -o programs/build/boot.o
 echo "[**] Compiled boot.S"
-[[ -f programs/$1/asm.S ]] && nasm -f elf32 programs/$1/asm.S -o programs/build/$1/obj.o
+[[ -f programs/$1/asm.S ]] && nasm -f elf64 programs/$1/asm.S -o programs/build/$1/obj.o
 echo "[**] Compiled asm"
-[[ -f programs/$1/c.c ]] && gcc -m32 -ffreestanding -nostdlib -c programs/$1/c.c -o programs/build/$1/obj.o
+[[ -f programs/$1/c.c ]] && gcc -m64 -ffreestanding -nostdlib -c programs/$1/c.c -o programs/build/$1/obj.o
 echo "[**] Compiled c"
-ld -m elf_i386 -T programs/$1/linker.ld programs/build/$1/obj.o programs/build/boot.o -o programs/build/$1/elf.elf
+ld -m elf_x86_64 -T programs/$1/linker.ld programs/build/$1/obj.o programs/build/boot.o -o programs/build/$1/elf.elf
 echo "[**] Linked"
 
 xxd -i programs/build/$1/elf.elf > src/compiled_programs/$1.c

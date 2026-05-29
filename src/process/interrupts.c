@@ -11,6 +11,7 @@
 #include "../memory/allocator.h"
 #include "../util/panic.h"
 #include "program_loader.h"
+#include "../screen.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
@@ -116,6 +117,8 @@ void interrupts_init() {
     io_outb(0x21, master_mask);
     io_outb(0xA1, slave_mask);
 
+    screen_print("[interrupts] remapped PIC\n");
+
     // 3. PIT Setup (100Hz)
     // ---------------------------------------------------------
     uint16_t divisor = PIT_FREQ / 100;
@@ -123,8 +126,10 @@ void interrupts_init() {
     io_outb(PIT_CHANNEL0, divisor & 0xFF);   // Low byte
     io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF); // High byte
 
+    screen_print("[interrupts] configured PIT: 100 Hz\n");
+
     // IDT
-    for (uint8_t i = 0; i < 256; ++i) {
+    for (uint16_t i = 0; i < 256; ++i) {
         idt_set_descriptor(i, isr0, 0x8E);
     }
 
@@ -161,7 +166,9 @@ void interrupts_init() {
     idt_set_descriptor(29, isr29, 0x8E);
     idt_set_descriptor(30, isr30, 0x8E);
     idt_set_descriptor(31, isr31, 0x8E);
-    
+
+    screen_print("[interrupts] configured IDT exceptions\n");
+
     /* IRQs 32..47 (irq0..irq15) */
     idt_set_descriptor(32, irq0,  0x8E);
     idt_set_descriptor(33, irq1,  0x8E);
@@ -180,12 +187,18 @@ void interrupts_init() {
     idt_set_descriptor(46, irq14, 0x8E);
     idt_set_descriptor(47, irq15, 0x8E);
 
+    screen_print("[interrupts] configured IDT IRQs\n");
+
     idt_set_descriptor(0x80, syscall_handler_asm, 0xEE);
+    screen_print("[interrupts] configured IDT syscall\n");
 
     lidt(idt, sizeof(idt) - 1);
+    screen_print("[interrupts] loaded IDT\n");
 
     // Enable interrupts
     asm volatile("sti");
+    screen_print("[interrupts] enabled interrupts\n");
+    screen_print("[interrupts] interrupts init\n");
 }
 
 void send_eoi(uint32_t irq_number) {

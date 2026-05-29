@@ -5,5 +5,5 @@ extern main
 _start:
     call main
 
-    mov eax, 0
+    mov rax, 0
     int 0x80

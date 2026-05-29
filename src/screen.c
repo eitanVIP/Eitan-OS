@@ -107,14 +107,14 @@ uint32_t screen_get_font_char_height() {
         return ((PSF1_header*)current_font)->charsize;
 }
 
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 0x4000
 
 static int cursor_x = 0;
 static int cursor_y = 0;
 
 static char buffer[BUFFER_SIZE] = {};
-static int scroll = 0;
-static int buffer_end = 0;
+static uint64_t scroll = 0;
+static uint64_t buffer_end = 0;
 
 void screen_norm_cursor() {
     uint64_t width = fb->width / screen_get_font_char_width();
@@ -137,32 +137,32 @@ void screen_flush() {
     uint64_t width = fb->width / screen_get_font_char_width();
     uint64_t height = fb->height / screen_get_font_char_height();
 
-    int buffer_start = 0;
+    uint64_t buffer_start = 0;
     if (scroll > 0) {
-        // int new_line_count = 0;
-        // bool_t counted_enough = 0;
-        // for (int i = 0; i < buffer_end; i++) {
-        //     if (buffer[i] == '\n') {
-        //         new_line_count++;
-        //
-        //         if (new_line_count >= scroll) {
-        //             buffer_start = i + 1;
-        //             counted_enough = 1;
-        //             break;
-        //         }
-        //     }
-        // }
-        //
-        // if (!counted_enough) {
-        //     for(int y = 0; y < fb->height; y++) {
-        //         for(int x = 0; x < fb->width; x++) {
-        //             screen_put_pixel(x, y, screen_make_color(0, 0, 0));
-        //         }
-        //     }
-        //     return;
-        // }
+        int new_line_count = 0;
+        bool_t counted_enough = 0;
+        for (int i = 0; i < buffer_end; i++) {
+            if (buffer[i] == '\n') {
+                new_line_count++;
 
-        buffer_start = scroll * width;
+                if (new_line_count >= scroll) {
+                    buffer_start = i + 1;
+                    counted_enough = 1;
+                    break;
+                }
+            }
+        }
+
+        if (!counted_enough) {
+            for(int y = 0; y < fb->height; y++) {
+                for(int x = 0; x < fb->width; x++) {
+                    screen_put_pixel(x, y, screen_make_color(0, 0, 0));
+                }
+            }
+            return;
+        }
+
+        // buffer_start = scroll * width;
         if (buffer_start >= BUFFER_SIZE) {
             for(int y = 0; y < fb->height; y++) {
                 for(int x = 0; x < fb->width; x++) {
@@ -175,14 +175,9 @@ void screen_flush() {
 
     cursor_x = 0;
     cursor_y = 0;
-    for(int y = 0; y < fb->height; y++) {
-        for(int x = 0; x < fb->width; x++) {
-            screen_put_pixel(x, y, screen_make_color(0, 0, 0));
-        }
-    }
 
-    int buffer_end_clamped = min(buffer_end, buffer_start + width * height);
-    for (int i = buffer_start; i < buffer_end_clamped; i++) {
+    uint64_t buffer_end_clamped = min(buffer_end, buffer_start + width * height);
+    for (uint64_t i = buffer_start; i < buffer_end_clamped; i++) {
         // if (buffer[i] == '\n') {
         //     cursor_x = 0;
         //     cursor_y++;
@@ -200,10 +195,22 @@ void screen_flush() {
             screen_put_char(' ', cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
             cursor_x++;
             screen_norm_cursor();
+        } else if (buffer[i] == '\n') {
+            for (; cursor_x < width; cursor_x++) {
+                screen_put_char(' ', cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
+            }
+            cursor_x = 0;
+            cursor_y++;
         } else {
             screen_put_char(buffer[i], cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
             cursor_x++;
             screen_norm_cursor();
+        }
+    }
+
+    for(; cursor_y < height; cursor_y++) {
+        for(; cursor_x < width; cursor_x++) {
+            screen_put_char(' ', cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
         }
     }
 }
@@ -220,11 +227,11 @@ void screen_print(const char* msg) {
 
         char c = msg[i];
 
-        if (c == '\n') {
+        /*if (c == '\n') {
             uint64_t current_col = buffer_end % width;
             buffer_end += (width - current_col);
         }
-        else if (c == '\b') {
+        else */if (c == '\b') {
             if (buffer_end > 0) {
                 buffer[buffer_end] = 0;
                 buffer_end--;
