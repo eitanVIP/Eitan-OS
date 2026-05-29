@@ -3,21 +3,21 @@
 //
 
 #include "VGA_screen.h"
-#include "io.h"
-#include "eitan_lib.h"
+#include "util/io.h"
+#include "util/util.h"
 #include "filesystem.h"
 #include "gdt.h"
-#include "interrupts.h"
-#include "allocator.h"
-#include "process_scheduler.h"
-#include "program_loader.h"
+#include "process/interrupts.h"
+#include "memory/allocator.h"
+#include "process/process_scheduler.h"
+#include "process/program_loader.h"
 #include "compiled_programs/shell.h"
 #include "compiled_programs/test.h"
-#include "limine.h"
-#include "panic.h"
-#include "pmm.h"
+#include "util/limine.h"
+#include "util/panic.h"
+#include "memory/pmm.h"
 #include "screen.h"
-#include "vmm.h"
+#include "memory/vmm.h"
 
 extern void enable_sse(void);
 extern void enable_nxe(void);

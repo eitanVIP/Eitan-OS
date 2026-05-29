@@ -4,8 +4,8 @@
 
 #include "VGA_screen.h"
 
-#include "eitan_lib.h"
-#include "allocator.h"
+#include "util/util.h"
+#include "memory/allocator.h"
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25

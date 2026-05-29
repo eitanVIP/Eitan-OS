@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "stdint.h"
+#include "../util/stdint.h"
 
 #define SIG_HUP      (1u << 0)
 #define SIG_INT      (1u << 1)

@@ -4,10 +4,10 @@
 
 #include "process_scheduler.h"
 
-#include "gdt.h"
-#include "allocator.h"
-#include "screen.h"
-#include "vmm.h"
+#include "../gdt.h"
+#include "../memory/allocator.h"
+#include "../screen.h"
+#include "../memory/vmm.h"
 
 #define STACK_SIZE 0x4000
 #define STACK_START 0x00007fffffffffff

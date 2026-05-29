@@ -4,9 +4,9 @@
 
 #include "program_loader.h"
 
-#include "eitan_lib.h"
-#include "VGA_screen.h"
-#include "allocator.h"
+#include "../util/util.h"
+#include "../VGA_screen.h"
+#include "../memory/allocator.h"
 #include "process_scheduler.h"
 
 #define PROCESS_MEMORY_START 0x2000000

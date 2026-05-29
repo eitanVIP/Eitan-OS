@@ -3,8 +3,7 @@
 //
 
 #include "panic.h"
-
-#include "screen.h"
+#include "../screen.h"
 
 void panic(const char *msg) {
     if (screen_is_init()) {

@@ -4,7 +4,7 @@
 
 #include "screen.h"
 #include "compiled_fonts/zap.h"
-#include "eitan_lib.h"
+#include "util/util.h"
 
 static struct limine_framebuffer* fb = null;
 static uint8_t* current_font = null;

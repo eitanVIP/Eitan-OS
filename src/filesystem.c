@@ -4,8 +4,8 @@
 
 #include "filesystem.h"
 
-#include "eitan_lib.h"
-#include "io.h"
+#include "util/util.h"
+#include "util/io.h"
 #include "VGA_screen.h"
 
 // ATA protocol IO ports

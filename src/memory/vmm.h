@@ -5,8 +5,8 @@
 #ifndef VMM_H
 #define VMM_H
 
-#include "stdint.h"
-#include "limine.h"
+#include "../util/stdint.h"
+#include "../util/limine.h"
 
 #define PAGE_SIZE 4096
 

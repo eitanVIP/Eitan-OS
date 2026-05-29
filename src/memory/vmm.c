@@ -1,8 +1,8 @@
 #include "vmm.h"
 
 #include "pmm.h"
-#include "eitan_lib.h"
-#include "screen.h"
+#include "../util/util.h"
+#include "../screen.h"
 
 #define PML4_INDEX(virt)  (((virt) >> 39) & 0x1FF)
 #define PDPT_INDEX(virt)  (((virt) >> 30) & 0x1FF)

@@ -5,7 +5,7 @@
 #include "allocator.h"
 
 #include "pmm.h"
-#include "screen.h"
+#include "../screen.h"
 #include "vmm.h"
 
 #define ALIGN 8

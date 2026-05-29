@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "stdint.h"
+#include "../util/stdint.h"
 
 #define HEAP_START_KERNEL 0xffffc90000000000
 #define HEAP_START 0x0000555555554000

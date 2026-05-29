@@ -5,8 +5,8 @@
 #ifndef PMM_H
 #define PMM_H
 
-#include "stdint.h"
-#include "limine.h"
+#include "../util/stdint.h"
+#include "../util/limine.h"
 
 #define FRAME_SIZE 4096
 

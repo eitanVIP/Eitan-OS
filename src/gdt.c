@@ -5,7 +5,7 @@
 #include "gdt.h"
 
 #include "screen.h"
-#include "stdint.h"
+#include "util/stdint.h"
 
 extern void setGdt(uint16_t limit, uint64_t base);
 extern void reloadSegments();

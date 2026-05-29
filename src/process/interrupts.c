@@ -3,13 +3,13 @@
 //
 
 #include "interrupts.h"
-#include "io.h"
-#include "VGA_screen.h"
-#include "eitan_lib.h"
-#include "filesystem.h"
+#include "../util/io.h"
+#include "../VGA_screen.h"
+#include "../util/util.h"
+#include "../filesystem.h"
 #include "process_scheduler.h"
-#include "allocator.h"
-#include "panic.h"
+#include "../memory/allocator.h"
+#include "../util/panic.h"
 #include "program_loader.h"
 
 #define PIT_CHANNEL0 0x40

@@ -4,7 +4,7 @@
 
 #include "pmm.h"
 
-#include "screen.h"
+#include "../screen.h"
 
 static uint8_t* pmm_bitmap;
 static size_t pmm_bitmap_size;

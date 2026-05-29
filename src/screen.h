@@ -5,8 +5,8 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
-#include "stdint.h"
-#include "limine.h"
+#include "util/stdint.h"
+#include "util/limine.h"
 
 typedef struct {
     uint16_t magic;   // 0x0436
