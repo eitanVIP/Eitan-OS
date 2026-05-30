@@ -10,10 +10,6 @@ static uint8_t* pmm_bitmap;
 static size_t pmm_bitmap_size;
 static size_t total_frames;
 
-uint64_t ceil_div(uint64_t numerator, uint64_t denominator) {
-    return (numerator + denominator - 1) / denominator;
-}
-
 uint8_t* pmm_get_bitmap() {
     return pmm_bitmap;
 }

@@ -53,6 +53,10 @@ double ceil(double num) {
     return frac != 0 ? flo + 1 : num;
 }
 
+uint64_t ceil_div(uint64_t a, uint64_t b) {
+    return (a + b - 1) / b;
+}
+
 double round(double num) {
     double flo = floor(num);
     double frac = num - flo;

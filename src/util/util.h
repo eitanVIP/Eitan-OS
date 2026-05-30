@@ -12,6 +12,7 @@ double max(double num1, double num2);
 double min(double num1, double num2);
 double floor(double num);
 double ceil(double num);
+uint64_t ceil_div(uint64_t a, uint64_t b);
 double round(double num);
 int rand();
 

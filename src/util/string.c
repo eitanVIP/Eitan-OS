@@ -16,7 +16,7 @@ int strlen(const char* str) {
     return count;
 }
 
- char* num_to_str(double num) {
+char* num_to_str(double num) {
      if (num == 0) {
          char* result = (char*)malloc(2);
          result[0] = '0';
@@ -68,9 +68,47 @@ int strlen(const char* str) {
      }
 
      return result;
- }
+}
 
- char* str_concat(const char* s1, const char* s2) {
+char* num_to_str_no_malloc(uint64_t num, char *buffer, size_t buffer_size) {
+    // Handle the edge case of an empty or too-small buffer
+    if (buffer == null || buffer_size < 2) return null;
+
+    // Start filling from the end of the buffer (leaving room for '\0')
+    char *ptr = &buffer[buffer_size - 1];
+    *ptr = '\0';
+
+    int is_negative = 0;
+
+    // Handle 0 explicitly
+    if (num == 0) {
+        *(--ptr) = '0';
+        return ptr;
+    }
+
+    // Handle negative numbers
+    // Note: Using unsigned or long long avoids overflow issues with INT_MIN
+    uint64_t n = num;
+    if (n < 0) {
+        is_negative = 1;
+        n = -n;
+    }
+
+    // Extract digits backwards
+    while (n > 0 && ptr > buffer) {
+        *(--ptr) = (n % 10) + '0';
+        n /= 10;
+    }
+
+    // Add negative sign if applicable and if space permits
+    if (is_negative && ptr > buffer) {
+        *(--ptr) = '-';
+    }
+
+    return ptr;
+}
+
+char* str_concat(const char* s1, const char* s2) {
      int len1 = strlen(s1);
      int len2 = strlen(s2);
 
@@ -90,12 +128,12 @@ int strlen(const char* str) {
      result[len1 + len2] = '\0';
 
      return result;
- }
+}
 
- char* strdup(const char* str) {
+char* strdup(const char* str) {
      char* result = malloc(strlen(str) + 1);
      return memcpy(result, str, strlen(str) + 1);
- }
+}
 
 char* str_concats(const char** strings, int count) {
     char* result = strdup(strings[0]);

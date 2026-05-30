@@ -9,6 +9,7 @@
 
 int strlen(const char* str);
 char* num_to_str(double num);
+char* num_to_str_no_malloc(uint64_t num, char *buffer, size_t buffer_size);
 char* str_concat(const char* s1, const char* s2);
 char* strdup(const char* str);
 char* str_concats(const char** strings, int count);

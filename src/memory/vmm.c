@@ -242,31 +242,14 @@ bool_t vmm_is_mapped(uint64_t virt) {
     return true;
 }
 
-// bool_t vmm_can_map(uint64_t virt, uint64_t phys) {
-//     PDPTable* pdpt_addr;
-//     PageDirectory* pd_addr;
-//     PageTable* pt_addr;
-//
-//     if (!current_PML4->entries[PML4_INDEX(virt)].present)
-//         return false;
-//     pdpt_addr = (PDPTable*)(current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12);
-//
-//     if (!pdpt_addr->entries[PDPT_INDEX(virt)].present)
-//         return false;
-//     pd_addr = (PageDirectory*)(pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12);
-//
-//     if (!pd_addr->entries[PD_INDEX(virt)].present)
-//         return false;
-//     pt_addr = (PageTable*)(pd_addr->entries[PD_INDEX(virt)].physical_addr << 12);
-//
-//     if (pt_addr->entries[PT_INDEX(virt)].present)
-//         return false;
-//
-//     if (pmm_is_reserved((void*)phys))
-//         return false;
-//
-//     return true;
-// }
+bool_t vmm_are_mapped(uint64_t start_virt, uint64_t end_virt) {
+    for (uint64_t virt = start_virt; virt <= end_virt; virt += PAGE_SIZE) {
+        if (!vmm_is_mapped(virt))
+            return false;
+    }
+
+    return true;
+}
 
 uint64_t vmm_virt_to_phys(uint64_t virt) {
     PDPTable* pdpt_addr;

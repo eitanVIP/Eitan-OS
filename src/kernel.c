@@ -112,7 +112,7 @@ void kernel_main(void) {
     program[8] = program_ptr >> 48 & 0xFF;
     program[9] = program_ptr >> 56 & 0xFF;
 
-    process_scheduler_add_process(program, true);
+    // process_scheduler_add_process(program, true);
 
     while (1) {
         uint16_t scancode = io_keyboard_read();

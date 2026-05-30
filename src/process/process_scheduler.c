@@ -67,6 +67,24 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
 
     allocator_heap_init(HEAP_START_KERNEL, HEAP_SIZE, true);
     screen_print("[process_scheduler] heap init\n");
+    allocator_print_status();
+    uint64_t* a = malloc(sizeof(uint64_t));
+    allocator_print_status();
+    uint8_t* b = malloc(10000);
+    allocator_print_status();
+    uint8_t* c = malloc_kernel(sizeof(uint64_t));
+    allocator_print_status();
+    uint8_t* d = malloc_kernel(5000);
+    allocator_print_status();
+    screen_print("\n");
+    free(b);
+    allocator_print_status();
+    free(d);
+    allocator_print_status();
+    free_kernel(a);
+    allocator_print_status();
+    free_kernel(c);
+    allocator_print_status();
 
     current_process = malloc(sizeof(process_t));
     current_process->pid = 0;
@@ -80,6 +98,8 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
 
     screen_print("[process_scheduler] created kernel process\n");
     screen_print("[process_scheduler] process_scheduler init\n");
+
+    // allocator_print_status();
 }
 
 uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
