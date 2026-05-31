@@ -18,6 +18,7 @@
 #include "memory/pmm.h"
 #include "screen.h"
 #include "memory/vmm.h"
+#include "util/string.h"
 
 extern void enable_sse(void);
 extern void enable_nxe(void);
@@ -86,8 +87,13 @@ void kernel_main(void) {
     if (kernel_PML4 == null)
         panic("vmm init crashed");
 
-    process_scheduler_init();
-    interrupts_init();
+    // char* buffer[100] = {};
+    // char* str = num_to_str_no_malloc((uint64_t)kernel_PML4, buffer, sizeof(buffer));
+    // screen_print(str);
+    // screen_print("\n");
+
+    process_scheduler_init(kernel_PML4);
+    interrupts_init(hhdm_request.response->offset);
 
     screen_print("[kernel] Eitan OS Started...\n");
     screen_print("[kernel] Hello user!\n");
@@ -112,7 +118,7 @@ void kernel_main(void) {
     program[8] = program_ptr >> 48 & 0xFF;
     program[9] = program_ptr >> 56 & 0xFF;
 
-    // process_scheduler_add_process(program, true);
+    process_scheduler_add_process(program, true);
 
     while (1) {
         uint16_t scancode = io_keyboard_read();

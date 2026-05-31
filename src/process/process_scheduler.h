@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../util/stdint.h"
+#include "../memory/vmm.h"
 
 #define SIG_HUP      (1u << 0)
 #define SIG_INT      (1u << 1)
@@ -39,7 +40,7 @@
 #define SIG_SYS      (1u << 30)
 #define SIG_RT       (1u << 31)
 
-void process_scheduler_init();
+void process_scheduler_init(PML4Table* kernel_PML4);
 uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level);
 void process_scheduler_next_process(uint64_t* current_regs);
 bool_t process_scheduler_remove_process(uint32_t pid);

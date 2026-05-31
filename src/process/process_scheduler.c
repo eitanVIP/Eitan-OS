@@ -7,7 +7,7 @@
 #include "../gdt.h"
 #include "../memory/allocator.h"
 #include "../screen.h"
-#include "../memory/vmm.h"
+#include "../util/string.h"
 
 #define STACK_SIZE 0x4000
 #define STACK_START 0x00007fffffffffff
@@ -65,26 +65,9 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
     // stack_list->free = 0;
     // stack_list->next = null;
 
+    screen_print("[process_scheduler] initializing heap for kernel:\n");
     allocator_heap_init(HEAP_START_KERNEL, HEAP_SIZE, true);
     screen_print("[process_scheduler] heap init\n");
-    allocator_print_status();
-    uint64_t* a = malloc(sizeof(uint64_t));
-    allocator_print_status();
-    uint8_t* b = malloc(10000);
-    allocator_print_status();
-    uint8_t* c = malloc_kernel(sizeof(uint64_t));
-    allocator_print_status();
-    uint8_t* d = malloc_kernel(5000);
-    allocator_print_status();
-    screen_print("\n");
-    free(b);
-    allocator_print_status();
-    free(d);
-    allocator_print_status();
-    free_kernel(a);
-    allocator_print_status();
-    free_kernel(c);
-    allocator_print_status();
 
     current_process = malloc(sizeof(process_t));
     current_process->pid = 0;
@@ -98,11 +81,11 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
 
     screen_print("[process_scheduler] created kernel process\n");
     screen_print("[process_scheduler] process_scheduler init\n");
-
-    // allocator_print_status();
 }
 
 uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kernel_level) {
+    asm volatile("cli");
+
     process_t* new_process = malloc(sizeof(process_t));
 
     new_process->pid = ++highest_pid;
@@ -157,13 +140,14 @@ uint32_t process_scheduler_add_process(void* process_code_start, bool_t is_kerne
     vmm_copy_kernel_PML4(new_PML4, kernel_process->PML4);
     vmm_set_PML4(new_PML4);
     vmm_load_cpu();
-    allocator_heap_init(HEAP_START, HEAP_SIZE, false);
+    allocator_heap_init(HEAP_START, HEAP_SIZE, is_kernel_level);
     vmm_set_PML4(kernel_process->PML4);
     vmm_load_cpu();
 
     new_process->next = current_process->next;
     current_process->next = new_process;
 
+    asm volatile("sti");
     return new_process->pid;
 }
 

@@ -60,6 +60,7 @@ struct idt_ptr {
 
 __attribute__((aligned(0x10)))
 static idt_entry_t idt[256];
+static uint64_t hhdm_offset;
 
 void idt_set_descriptor(uint8_t vector, void* isr, uint8_t flags) {
     idt_entry_t* descriptor = &idt[vector];
@@ -75,11 +76,13 @@ void idt_set_descriptor(uint8_t vector, void* isr, uint8_t flags) {
 }
 
 static inline void lidt(void* base, uint16_t size) {
-    struct idt_ptr IDTR = { size, (uint64_t) base };
+    struct idt_ptr IDTR = { size, (uint64_t) base - hhdm_offset };
     asm volatile("lidt %0" : : "m"(IDTR));
 }
 
-void interrupts_init() {
+void interrupts_init(uint64_t hhdm_offset_param) {
+    hhdm_offset = hhdm_offset_param;
+
     // 1. PIC Remap Sequence
     // ---------------------------------------------------------
     // Starts the initialization sequence (ICW1)
@@ -134,58 +137,58 @@ void interrupts_init() {
     }
 
     /* Exceptions 0..31 */
-    idt_set_descriptor(0,  isr0,  0x8E);
-    idt_set_descriptor(1,  isr1,  0x8E);
-    idt_set_descriptor(2,  isr2,  0x8E);
-    idt_set_descriptor(3,  isr3,  0x8E);
-    idt_set_descriptor(4,  isr4,  0x8E);
-    idt_set_descriptor(5,  isr5,  0x8E);
-    idt_set_descriptor(6,  isr6,  0x8E);
-    idt_set_descriptor(7,  isr7,  0x8E);
-    idt_set_descriptor(8,  isr8,  0x8E);
-    idt_set_descriptor(9,  isr9,  0x8E);
-    idt_set_descriptor(10, isr10, 0x8E);
-    idt_set_descriptor(11, isr11, 0x8E);
-    idt_set_descriptor(12, isr12, 0x8E);
-    idt_set_descriptor(13, isr13, 0x8E);
-    idt_set_descriptor(14, isr14, 0x8E);
-    idt_set_descriptor(15, isr15, 0x8E);
-    idt_set_descriptor(16, isr16, 0x8E);
-    idt_set_descriptor(17, isr17, 0x8E);
-    idt_set_descriptor(18, isr18, 0x8E);
-    idt_set_descriptor(19, isr19, 0x8E);
-    idt_set_descriptor(20, isr20, 0x8E);
-    idt_set_descriptor(21, isr21, 0x8E);
-    idt_set_descriptor(22, isr22, 0x8E);
-    idt_set_descriptor(23, isr23, 0x8E);
-    idt_set_descriptor(24, isr24, 0x8E);
-    idt_set_descriptor(25, isr25, 0x8E);
-    idt_set_descriptor(26, isr26, 0x8E);
-    idt_set_descriptor(27, isr27, 0x8E);
-    idt_set_descriptor(28, isr28, 0x8E);
-    idt_set_descriptor(29, isr29, 0x8E);
-    idt_set_descriptor(30, isr30, 0x8E);
-    idt_set_descriptor(31, isr31, 0x8E);
-
-    screen_print("[interrupts] configured IDT exceptions\n");
-
-    /* IRQs 32..47 (irq0..irq15) */
-    idt_set_descriptor(32, irq0,  0x8E);
-    idt_set_descriptor(33, irq1,  0x8E);
-    idt_set_descriptor(34, irq2,  0x8E);
-    idt_set_descriptor(35, irq3,  0x8E);
-    idt_set_descriptor(36, irq4,  0x8E);
-    idt_set_descriptor(37, irq5,  0x8E);
-    idt_set_descriptor(38, irq6,  0x8E);
-    idt_set_descriptor(39, irq7,  0x8E);
-    idt_set_descriptor(40, irq8,  0x8E);
-    idt_set_descriptor(41, irq9,  0x8E);
-    idt_set_descriptor(42, irq10, 0x8E);
-    idt_set_descriptor(43, irq11, 0x8E);
-    idt_set_descriptor(44, irq12, 0x8E);
-    idt_set_descriptor(45, irq13, 0x8E);
-    idt_set_descriptor(46, irq14, 0x8E);
-    idt_set_descriptor(47, irq15, 0x8E);
+    // idt_set_descriptor(0,  isr0,  0x8E);
+    // idt_set_descriptor(1,  isr1,  0x8E);
+    // idt_set_descriptor(2,  isr2,  0x8E);
+    // idt_set_descriptor(3,  isr3,  0x8E);
+    // idt_set_descriptor(4,  isr4,  0x8E);
+    // idt_set_descriptor(5,  isr5,  0x8E);
+    // idt_set_descriptor(6,  isr6,  0x8E);
+    // idt_set_descriptor(7,  isr7,  0x8E);
+    // idt_set_descriptor(8,  isr8,  0x8E);
+    // idt_set_descriptor(9,  isr9,  0x8E);
+    // idt_set_descriptor(10, isr10, 0x8E);
+    // idt_set_descriptor(11, isr11, 0x8E);
+    // idt_set_descriptor(12, isr12, 0x8E);
+    // idt_set_descriptor(13, isr13, 0x8E);
+    // idt_set_descriptor(14, isr14, 0x8E);
+    // idt_set_descriptor(15, isr15, 0x8E);
+    // idt_set_descriptor(16, isr16, 0x8E);
+    // idt_set_descriptor(17, isr17, 0x8E);
+    // idt_set_descriptor(18, isr18, 0x8E);
+    // idt_set_descriptor(19, isr19, 0x8E);
+    // idt_set_descriptor(20, isr20, 0x8E);
+    // idt_set_descriptor(21, isr21, 0x8E);
+    // idt_set_descriptor(22, isr22, 0x8E);
+    // idt_set_descriptor(23, isr23, 0x8E);
+    // idt_set_descriptor(24, isr24, 0x8E);
+    // idt_set_descriptor(25, isr25, 0x8E);
+    // idt_set_descriptor(26, isr26, 0x8E);
+    // idt_set_descriptor(27, isr27, 0x8E);
+    // idt_set_descriptor(28, isr28, 0x8E);
+    // idt_set_descriptor(29, isr29, 0x8E);
+    // idt_set_descriptor(30, isr30, 0x8E);
+    // idt_set_descriptor(31, isr31, 0x8E);
+    //
+    // screen_print("[interrupts] configured IDT exceptions\n");
+    //
+    // /* IRQs 32..47 (irq0..irq15) */
+    // idt_set_descriptor(32, irq0,  0x8E);
+    // idt_set_descriptor(33, irq1,  0x8E);
+    // idt_set_descriptor(34, irq2,  0x8E);
+    // idt_set_descriptor(35, irq3,  0x8E);
+    // idt_set_descriptor(36, irq4,  0x8E);
+    // idt_set_descriptor(37, irq5,  0x8E);
+    // idt_set_descriptor(38, irq6,  0x8E);
+    // idt_set_descriptor(39, irq7,  0x8E);
+    // idt_set_descriptor(40, irq8,  0x8E);
+    // idt_set_descriptor(41, irq9,  0x8E);
+    // idt_set_descriptor(42, irq10, 0x8E);
+    // idt_set_descriptor(43, irq11, 0x8E);
+    // idt_set_descriptor(44, irq12, 0x8E);
+    // idt_set_descriptor(45, irq13, 0x8E);
+    // idt_set_descriptor(46, irq14, 0x8E);
+    // idt_set_descriptor(47, irq15, 0x8E);
 
     screen_print("[interrupts] configured IDT IRQs\n");
 
