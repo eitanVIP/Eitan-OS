@@ -12,6 +12,7 @@
 #include "../util/panic.h"
 #include "program_loader.h"
 #include "../screen.h"
+#include "../util/string.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
@@ -288,7 +289,7 @@ void send_eoi_PIC(uint32_t irq_number) {
 
 
 void send_eoi_APIC(void) {
-    volatile uint32_t* eoi_reg = (volatile uint32_t*)(LAPIC_BASE + LAPIC_EOI);
+    volatile uint32_t* eoi_reg = (volatile uint32_t*)(LAPIC_BASE_VIRT + LAPIC_EOI);
     *eoi_reg = 0; // Any value other than 0 is reserved; writing 0 signals completion
 }
 
@@ -325,6 +326,12 @@ void exception_handler_c(uint32_t int_no, uint64_t* regs) {
     // while (1) {
     //     asm volatile("hlt");
     // }
+
+    screen_print("CPU Exception: ");
+    char* buf[16];
+    char* msg = num_to_str_no_malloc(int_no, buf, sizeof(buf));
+    screen_print(msg);
+    screen_print("\n");
     panic("exception_handler_c");
 }
 

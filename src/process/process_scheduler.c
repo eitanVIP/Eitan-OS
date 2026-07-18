@@ -13,8 +13,8 @@
 #define STACK_START 0x00007fffffffffff
 
 typedef struct {
-    uint64_t fs;
     uint64_t gs;
+    uint64_t fs;
     uint64_t r15;
     uint64_t r14;
     uint64_t r13;

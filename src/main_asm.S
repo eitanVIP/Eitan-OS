@@ -21,30 +21,32 @@ extern syscall_handler_c
 
 ; ----- Stack layout after PUSH_ALL ----------
 ;
-;  [rsp +   0]  r15     <- PUSH_ALL starts here
-;  [rsp +   8]  r14
-;  [rsp +  16]  r13
-;  [rsp +  24]  r12
-;  [rsp +  32]  r11
-;  [rsp +  40]  r10
-;  [rsp +  48]  r9
-;  [rsp +  56]  r8
-;  [rsp +  64]  rbp
-;  [rsp +  72]  rdi
-;  [rsp +  80]  rsi
-;  [rsp +  88]  rdx
-;  [rsp +  96]  rcx
-;  [rsp + 104]  rbx
-;  [rsp + 112]  rax
-;  [rsp + 120]  error_code   (pushed by CPU or dummy 0)
+;  [rsp +   0]  gs
+;  [rsp +   8]  fs
+;  [rsp +   16]  r15
+;  [rsp +   24]  r14
+;  [rsp +  32]  r13
+;  [rsp +  40]  r12
+;  [rsp +  48]  r11
+;  [rsp +  56]  r10
+;  [rsp +  64]  r9
+;  [rsp +  72]  r8
+;  [rsp +  80]  rbp
+;  [rsp +  88]  rdi
+;  [rsp +  96]  rsi
+;  [rsp +  104]  rdx
+;  [rsp +  112]  rcx
+;  [rsp + 120]  rbx
+;  [rsp + 128]  rax
+;  [rsp + 136]  error_code   (pushed by CPU or dummy 0)
 ;  ----- CPU-pushed interrupt frame (always present in 64-bit mode) ----------
-;  [rsp + 128]  rip
-;  [rsp + 136]  cs
-;  [rsp + 144]  rflags
-;  [rsp + 152]  rsp  (before interrupt)
-;  [rsp + 160]  ss
+;  [rsp + 144]  rip
+;  [rsp + 152]  cs
+;  [rsp + 160]  rflags
+;  [rsp + 168]  rsp  (before interrupt)
+;  [rsp + 176]  ss
 
-%define FRAME_CS 136    ; offset of cs from rsp after PUSH_ALL
+%define FRAME_CS 152    ; offset of cs from rsp after PUSH_ALL
 
 ; ----- Macros ----------
 
