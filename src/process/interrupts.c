@@ -16,12 +16,30 @@
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
 #define PIT_FREQ     1193180
+#define PIT_HZ       100
 
 #define PIC1_COMMAND 0x20
 #define PIC1_DATA    0x21
 #define PIC2_COMMAND 0xA0
 #define PIC2_DATA    0xA1
 #define PIC_EOI      0x20
+
+#define IA32_APIC_BASE_MSR        0x1B
+#define IA32_APIC_BASE_MSR_BSP    0x100
+#define IA32_APIC_BASE_MSR_ENABLE (1 << 11)
+#define LAPIC_BASE                0xFEE00000
+#define LAPIC_SIVR                0xF0
+#define LAPIC_ENABLE_BIT          (1 << 8)
+#define LAPIC_EOI                 0xB0
+#define IOAPIC_BASE               0xFEC00000
+#define IOAPIC_REGSEL             0x00
+#define IOAPIC_IOWIN              0x10
+#define IOAPIC_REDTBL_PIT_LOW     0x14
+#define IOAPIC_REDTBL_PIT_HIGH    0x15
+
+#define KERNEL_MMIO_BASE 0xFFFFFFFFC0000000
+#define LAPIC_BASE_VIRT     (KERNEL_MMIO_BASE + 0x000000)
+#define IOAPIC_BASE_VIRT    (KERNEL_MMIO_BASE + 0x001000)
 
 void exception_handler_c(uint32_t int_no, uint64_t* regs);
 void irq_handler_c(uint32_t int_no, uint64_t* regs);
@@ -76,15 +94,11 @@ void idt_set_descriptor(uint8_t vector, void* isr, uint8_t flags) {
 }
 
 static inline void lidt(void* base, uint16_t size) {
-    struct idt_ptr IDTR = { size, (uint64_t) base - hhdm_offset };
+    struct idt_ptr IDTR = { size, (uint64_t) base };
     asm volatile("lidt %0" : : "m"(IDTR));
 }
 
-void interrupts_init(uint64_t hhdm_offset_param) {
-    hhdm_offset = hhdm_offset_param;
-
-    // 1. PIC Remap Sequence
-    // ---------------------------------------------------------
+void configure_PIC() {
     // Starts the initialization sequence (ICW1)
     io_outb(0x20, 0x11);
     io_outb(0xA0, 0x11);
@@ -102,8 +116,7 @@ void interrupts_init(uint64_t hhdm_offset_param) {
     io_outb(0x21, 0x01);
     io_outb(0xA1, 0x01);
 
-    // 2. Explicit Masking (The "Safe Guard")
-    // ---------------------------------------------------------
+    // Explicit Masking (The "Safe Guard")
     // We mask everything by default to prevent random hardware noise
     // from jumping to uninitialized handlers.
 
@@ -121,80 +134,140 @@ void interrupts_init(uint64_t hhdm_offset_param) {
     io_outb(0xA1, slave_mask);
 
     screen_print("[interrupts] remapped PIC\n");
+}
 
-    // 3. PIT Setup (100Hz)
-    // ---------------------------------------------------------
-    uint16_t divisor = PIT_FREQ / 100;
-    io_outb(PIT_COMMAND, 0x36);             // Command port
-    io_outb(PIT_CHANNEL0, divisor & 0xFF);   // Low byte
+uint64_t read_msr(uint32_t msr) {
+    uint32_t low, high;
+    asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
+    return ((uint64_t)high << 32) | low;
+}
+
+void write_msr(uint32_t msr, uint64_t value) {
+    uint32_t low = value & 0xFFFFFFFF;
+    uint32_t high = value >> 32;
+    asm volatile("wrmsr" :: "a"(low), "d"(high), "c"(msr));
+}
+
+void ioapic_write(uint8_t reg, uint32_t value) {
+    volatile uint32_t* regsel = (volatile uint32_t*)(IOAPIC_BASE_VIRT + IOAPIC_REGSEL);
+    volatile uint32_t* iowin  = (volatile uint32_t*)(IOAPIC_BASE_VIRT + IOAPIC_IOWIN);
+
+    *regsel = reg;
+    *iowin = value;
+}
+
+void configure_APIC() {
+    // disable PIC
+    io_outb(PIC1_DATA, 0xFF); // Disable all IRQs on Master PIC
+    io_outb(PIC2_DATA, 0xFF); // Disable all IRQs on Slave PIC
+
+    // enable global APIC
+    uint64_t apic_base_msr = read_msr(IA32_APIC_BASE_MSR);
+    apic_base_msr |= IA32_APIC_BASE_MSR_ENABLE; // Set bit 11 to enable the APIC globally
+    write_msr(IA32_APIC_BASE_MSR, apic_base_msr);
+
+    // software-enable the LAPIC by setting bit 8 of the Spurious Interrupt Vector Register (SIVR)
+    volatile uint32_t* sivr = (volatile uint32_t*)((uint64_t)LAPIC_BASE_VIRT + (uint64_t)LAPIC_SIVR);
+    *sivr = *sivr | LAPIC_ENABLE_BIT | 0xFF; // set the Software Enable bit and assign vector 0xFF for spurious interrupts
+
+    // route PIT to IOAPIC to IDT
+    // configure the high 32-bits: Target CPU (0x00 = Bootstrap Processor / CPU 0)
+    ioapic_write(IOAPIC_REDTBL_PIT_HIGH, 0x00000000);
+    // configure the low 32-bits:
+    // Bit 0-7: Vector number allocated in the IDT (e.g., 0x20)
+    // Bit 8-10: Delivery Mode (000 = Fixed)
+    // Bit 11: Destination Mode (0 = Physical)
+    // Bit 16: Mask (0 = Unmasked/Enabled)
+    uint32_t low_flags = 0x20 & 0xFF;
+    ioapic_write(IOAPIC_REDTBL_PIT_LOW, low_flags);
+}
+
+void configure_PIT() {
+    uint16_t divisor = PIT_FREQ / PIT_HZ;
+    io_outb(PIT_COMMAND, 0x36);
+    io_outb(PIT_CHANNEL0, divisor & 0xFF);        // Low byte
     io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF); // High byte
+}
 
-    screen_print("[interrupts] configured PIT: 100 Hz\n");
+void interrupts_init(uint64_t hhdm_offset_param) {
+    hhdm_offset = hhdm_offset_param;
+
+    vmm_map_page(LAPIC_BASE_VIRT, LAPIC_BASE, VMM_FLAGS_MMIO);
+    vmm_map_page(IOAPIC_BASE_VIRT, IOAPIC_BASE, VMM_FLAGS_MMIO);
+
+    configure_APIC();
+    screen_print("[interrupts] configured APIC\n");
+
+    configure_PIT();
+    screen_print("[interrupts] configured PIT\n");
 
     // IDT
+    // Map everything to isr0 so nothing stays unmapped
     for (uint16_t i = 0; i < 256; ++i) {
         idt_set_descriptor(i, isr0, 0x8E);
     }
 
-    /* Exceptions 0..31 */
-    // idt_set_descriptor(0,  isr0,  0x8E);
-    // idt_set_descriptor(1,  isr1,  0x8E);
-    // idt_set_descriptor(2,  isr2,  0x8E);
-    // idt_set_descriptor(3,  isr3,  0x8E);
-    // idt_set_descriptor(4,  isr4,  0x8E);
-    // idt_set_descriptor(5,  isr5,  0x8E);
-    // idt_set_descriptor(6,  isr6,  0x8E);
-    // idt_set_descriptor(7,  isr7,  0x8E);
-    // idt_set_descriptor(8,  isr8,  0x8E);
-    // idt_set_descriptor(9,  isr9,  0x8E);
-    // idt_set_descriptor(10, isr10, 0x8E);
-    // idt_set_descriptor(11, isr11, 0x8E);
-    // idt_set_descriptor(12, isr12, 0x8E);
-    // idt_set_descriptor(13, isr13, 0x8E);
-    // idt_set_descriptor(14, isr14, 0x8E);
-    // idt_set_descriptor(15, isr15, 0x8E);
-    // idt_set_descriptor(16, isr16, 0x8E);
-    // idt_set_descriptor(17, isr17, 0x8E);
-    // idt_set_descriptor(18, isr18, 0x8E);
-    // idt_set_descriptor(19, isr19, 0x8E);
-    // idt_set_descriptor(20, isr20, 0x8E);
-    // idt_set_descriptor(21, isr21, 0x8E);
-    // idt_set_descriptor(22, isr22, 0x8E);
-    // idt_set_descriptor(23, isr23, 0x8E);
-    // idt_set_descriptor(24, isr24, 0x8E);
-    // idt_set_descriptor(25, isr25, 0x8E);
-    // idt_set_descriptor(26, isr26, 0x8E);
-    // idt_set_descriptor(27, isr27, 0x8E);
-    // idt_set_descriptor(28, isr28, 0x8E);
-    // idt_set_descriptor(29, isr29, 0x8E);
-    // idt_set_descriptor(30, isr30, 0x8E);
-    // idt_set_descriptor(31, isr31, 0x8E);
-    //
-    // screen_print("[interrupts] configured IDT exceptions\n");
-    //
-    // /* IRQs 32..47 (irq0..irq15) */
-    // idt_set_descriptor(32, irq0,  0x8E);
-    // idt_set_descriptor(33, irq1,  0x8E);
-    // idt_set_descriptor(34, irq2,  0x8E);
-    // idt_set_descriptor(35, irq3,  0x8E);
-    // idt_set_descriptor(36, irq4,  0x8E);
-    // idt_set_descriptor(37, irq5,  0x8E);
-    // idt_set_descriptor(38, irq6,  0x8E);
-    // idt_set_descriptor(39, irq7,  0x8E);
-    // idt_set_descriptor(40, irq8,  0x8E);
-    // idt_set_descriptor(41, irq9,  0x8E);
-    // idt_set_descriptor(42, irq10, 0x8E);
-    // idt_set_descriptor(43, irq11, 0x8E);
-    // idt_set_descriptor(44, irq12, 0x8E);
-    // idt_set_descriptor(45, irq13, 0x8E);
-    // idt_set_descriptor(46, irq14, 0x8E);
-    // idt_set_descriptor(47, irq15, 0x8E);
+    // Exceptions 0..31
+    idt_set_descriptor(0,  isr0,  0x8E);
+    idt_set_descriptor(1,  isr1,  0x8E);
+    idt_set_descriptor(2,  isr2,  0x8E);
+    idt_set_descriptor(3,  isr3,  0x8E);
+    idt_set_descriptor(4,  isr4,  0x8E);
+    idt_set_descriptor(5,  isr5,  0x8E);
+    idt_set_descriptor(6,  isr6,  0x8E);
+    idt_set_descriptor(7,  isr7,  0x8E);
+    idt_set_descriptor(8,  isr8,  0x8E);
+    idt_set_descriptor(9,  isr9,  0x8E);
+    idt_set_descriptor(10, isr10, 0x8E);
+    idt_set_descriptor(11, isr11, 0x8E);
+    idt_set_descriptor(12, isr12, 0x8E);
+    idt_set_descriptor(13, isr13, 0x8E);
+    idt_set_descriptor(14, isr14, 0x8E);
+    idt_set_descriptor(15, isr15, 0x8E);
+    idt_set_descriptor(16, isr16, 0x8E);
+    idt_set_descriptor(17, isr17, 0x8E);
+    idt_set_descriptor(18, isr18, 0x8E);
+    idt_set_descriptor(19, isr19, 0x8E);
+    idt_set_descriptor(20, isr20, 0x8E);
+    idt_set_descriptor(21, isr21, 0x8E);
+    idt_set_descriptor(22, isr22, 0x8E);
+    idt_set_descriptor(23, isr23, 0x8E);
+    idt_set_descriptor(24, isr24, 0x8E);
+    idt_set_descriptor(25, isr25, 0x8E);
+    idt_set_descriptor(26, isr26, 0x8E);
+    idt_set_descriptor(27, isr27, 0x8E);
+    idt_set_descriptor(28, isr28, 0x8E);
+    idt_set_descriptor(29, isr29, 0x8E);
+    idt_set_descriptor(30, isr30, 0x8E);
+    idt_set_descriptor(31, isr31, 0x8E);
+
+    screen_print("[interrupts] configured IDT exceptions\n");
+
+    // IRQs 32..47 (irq0..irq15)
+    idt_set_descriptor(32, irq0,  0x8E);
+    idt_set_descriptor(33, irq1,  0x8E);
+    idt_set_descriptor(34, irq2,  0x8E);
+    idt_set_descriptor(35, irq3,  0x8E);
+    idt_set_descriptor(36, irq4,  0x8E);
+    idt_set_descriptor(37, irq5,  0x8E);
+    idt_set_descriptor(38, irq6,  0x8E);
+    idt_set_descriptor(39, irq7,  0x8E);
+    idt_set_descriptor(40, irq8,  0x8E);
+    idt_set_descriptor(41, irq9,  0x8E);
+    idt_set_descriptor(42, irq10, 0x8E);
+    idt_set_descriptor(43, irq11, 0x8E);
+    idt_set_descriptor(44, irq12, 0x8E);
+    idt_set_descriptor(45, irq13, 0x8E);
+    idt_set_descriptor(46, irq14, 0x8E);
+    idt_set_descriptor(47, irq15, 0x8E);
 
     screen_print("[interrupts] configured IDT IRQs\n");
 
+    // SYSCALL (128 / 0x80)
     idt_set_descriptor(0x80, syscall_handler_asm, 0xEE);
     screen_print("[interrupts] configured IDT syscall\n");
 
+    // Load IDT
     lidt(idt, sizeof(idt) - 1);
     screen_print("[interrupts] loaded IDT\n");
 
@@ -204,13 +277,19 @@ void interrupts_init(uint64_t hhdm_offset_param) {
     screen_print("[interrupts] interrupts init\n");
 }
 
-void send_eoi(uint32_t irq_number) {
+void send_eoi_PIC(uint32_t irq_number) {
     if (irq_number >= 8) {
         // If IRQ came from Slave PIC
         io_outb(PIC2_COMMAND, PIC_EOI); // Send EOI to Slave PIC
     }
     // Always send EOI to Master PIC
     io_outb(PIC1_COMMAND, PIC_EOI); // Send EOI to Master PIC
+}
+
+
+void send_eoi_APIC(void) {
+    volatile uint32_t* eoi_reg = (volatile uint32_t*)(LAPIC_BASE + LAPIC_EOI);
+    *eoi_reg = 0; // Any value other than 0 is reserved; writing 0 signals completion
 }
 
 void exception_handler_c(uint32_t int_no, uint64_t* regs) {
@@ -256,13 +335,9 @@ void irq_handler_c(uint32_t int_no, uint64_t* regs) {
 
     if (irq == 0) {
         process_scheduler_next_process(regs);
-    } else if (irq == 1) {
-        // Keyboard - disabled in PIC
-    } else {
-        // Other IRQs - disabled in PIC
     }
 
-    send_eoi(irq);
+    send_eoi_APIC();
 }
 
 void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t* current_regs) {
