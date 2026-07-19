@@ -188,6 +188,49 @@ bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags) {
     return true;
 }
 
+bool_t vmm_edit_page(uint64_t virt, uint64_t phys, uint64_t flags) {
+    PDPTable* pdpt_addr;
+    PageDirectory* pd_addr;
+    PageTable* pt_addr;
+
+    if (!current_PML4->entries[PML4_INDEX(virt)].present)
+        return false;
+    pdpt_addr = (PDPTable*)((current_PML4->entries[PML4_INDEX(virt)].physical_addr << 12) + hhdm_offset);
+
+    if (!pdpt_addr->entries[PDPT_INDEX(virt)].present)
+        return false;
+    pd_addr = (PageDirectory*)((pdpt_addr->entries[PDPT_INDEX(virt)].physical_addr << 12) + hhdm_offset);
+
+    if (!pd_addr->entries[PD_INDEX(virt)].present)
+        return false;
+    pt_addr = (PageTable*)((pd_addr->entries[PD_INDEX(virt)].physical_addr << 12) + hhdm_offset);
+
+    if (!pt_addr->entries[PT_INDEX(virt)].present)
+        return false;
+
+    uint64_t current_phys = pt_addr->entries[PT_INDEX(virt)].physical_addr << 12;
+
+    if (flags != null) {
+        memcpy(&pt_addr->entries[PT_INDEX(virt)], &flags, sizeof(page_entry_t));
+        pt_addr->entries[PT_INDEX(virt)].physical_addr = current_phys >> 12;
+    }
+
+    if (phys != null) {
+        if (pmm_is_reserved((void*)current_phys))
+            pmm_free_frame((void*)current_phys);
+
+        if (!pmm_is_reserved((void*)phys))
+            if (!pmm_reserve_frame((void*)phys))
+                return false;
+
+        pt_addr->entries[PT_INDEX(virt)].physical_addr = phys >> 12;
+    }
+
+    asm volatile("invlpg (%0)" :: "r"(virt) : "memory");
+
+    return true;
+}
+
 bool_t vmm_unmap_page(uint64_t virt) {
     PDPTable* pdpt_addr;
     PageDirectory* pd_addr;

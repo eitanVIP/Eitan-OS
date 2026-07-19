@@ -28,7 +28,6 @@ static allocator_data* data;
 static block_t** kernel_free_list_ptr;
 
 bool_t allocator_heap_init(uint64_t heap_start, uint64_t heap_size, bool_t is_kernel) {
-    // data = (allocator_data*)(heap_start - PAGE_SIZE);
     data = (allocator_data*)(HEAP_START - PAGE_SIZE);
     bool_t success = vmm_alloc((uint64_t)data, (uint64_t)data, VMM_FLAGS_KERNEL_RW);
     if (!success) {

@@ -327,11 +327,18 @@ void exception_handler_c(uint32_t int_no, uint64_t* regs) {
     //     asm volatile("hlt");
     // }
 
-    screen_print("CPU Exception: ");
     char* buf[16];
+
+    screen_print("CPU exception: ");
     char* msg = num_to_str_no_malloc(int_no, buf, sizeof(buf));
     screen_print(msg);
     screen_print("\n");
+
+    screen_print("Error code: ");
+    msg = num_to_str_no_malloc(regs[17], buf, sizeof(buf));
+    screen_print(msg);
+    screen_print("\n");
+
     panic("exception_handler_c");
 }
 
