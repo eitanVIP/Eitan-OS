@@ -196,6 +196,8 @@ bool_t program_loader_load_elf64(const uint8_t* file_data, uint32_t* pid) {
     if (!check_file_elf64(header))
         return false;
 
+    asm volatile("cli");
+
     PML4Table* new_PML4;
     if (!vmm_create_PML4(&new_PML4)) {
         log_error("Failed to create PML4");
@@ -238,7 +240,7 @@ bool_t program_loader_load_elf64(const uint8_t* file_data, uint32_t* pid) {
         vmm_edit_page(entry.virtual_address, null, alloc_flags);
     }
 
-    vmm_alloc(STACK_START, STACK_START + STACK_SIZE - 1, VMM_FLAGS_USER_RW);
+    vmm_alloc(STACK_START - STACK_SIZE + 1, STACK_START, VMM_FLAGS_USER_RW);
 
     allocator_heap_init(HEAP_START, HEAP_SIZE, false);
 

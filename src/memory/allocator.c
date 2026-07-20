@@ -31,10 +31,10 @@ bool_t allocator_heap_init(uint64_t heap_start, uint64_t heap_size, bool_t is_ke
     data = (allocator_data*)(HEAP_START - PAGE_SIZE);
     bool_t success = vmm_alloc((uint64_t)data, (uint64_t)data, VMM_FLAGS_KERNEL_RW);
     if (!success) {
-        screen_print("[allocator] failed to map allocator_data page\n");
+        screen_print("[allocator] failed to map allocator data page\n");
         return false;
     }
-    screen_print("[allocator] mapped allocator_data page\n");
+    screen_print("[allocator] mapped allocator data page\n");
 
     uint64_t end = heap_start + heap_size - 1;
     success = vmm_alloc(heap_start, end, is_kernel ? VMM_FLAGS_KERNEL_RW : VMM_FLAGS_USER_RW);
