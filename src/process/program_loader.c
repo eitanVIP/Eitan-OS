@@ -192,11 +192,17 @@ bool_t check_file_elf64(elf64_header header) {
 }
 
 bool_t program_loader_load_elf64(const uint8_t* file_data, uint32_t* pid) {
+    screen_print("[program_loader] checking elf64 header\n");
+
     elf64_header header = *(elf64_header*)file_data;
     if (!check_file_elf64(header))
         return false;
 
+    screen_print("[program_loader] elf64 header OK\n");
+
     asm volatile("cli");
+
+    screen_print("[program_loader] creating PML4 for process\n");
 
     PML4Table* new_PML4;
     if (!vmm_create_PML4(&new_PML4)) {
@@ -207,12 +213,18 @@ bool_t program_loader_load_elf64(const uint8_t* file_data, uint32_t* pid) {
     vmm_set_PML4(new_PML4);
     vmm_load_cpu();
 
+    screen_print("[program_loader] created PML4\n");
+
     for (int i = 0; i < header.program_header_entries; i++) {
         elf64_program_header_entry entry = *(elf64_program_header_entry*)(file_data + header.program_header_offset + i * header.program_header_entry_size);
 
+        screen_print("[program_loader] reading header entry\n");
+
         // 1 = PT_LOAD
-        if (entry.segment_type != 1)
+        if (entry.segment_type != 1) {
+            screen_print("[program_loader] entry type is not PT_LOAD. skipping...\n");
             continue;
+        }
 
         if (entry.virtual_address < PROCESS_MEMORY_START) {
             log_error("Program wants to load out of bounds");
@@ -237,11 +249,15 @@ bool_t program_loader_load_elf64(const uint8_t* file_data, uint32_t* pid) {
         uint64_t alloc_flags = 0;
         if (is_code) alloc_flags = VMM_FLAGS_USER_CODE;
         else alloc_flags = VMM_FLAGS_USER_RW;
-        vmm_edit_page(entry.virtual_address, null, alloc_flags);
+        vmm_edit_pages(entry.virtual_address, entry.virtual_address + entry.memory_size - 1, alloc_flags);
+
+        screen_print("[program_loader] copied entry to memory\n");
     }
 
     vmm_alloc(STACK_START - STACK_SIZE + 1, STACK_START, VMM_FLAGS_USER_RW);
+    screen_print("[program_loader] mapped stack for process\n");
 
+    screen_print("[program_loader] initiating heap for process:\n");
     allocator_heap_init(HEAP_START, HEAP_SIZE, false);
 
     vmm_set_PML4(process_scheduler_get_kernel_PML4());
@@ -249,6 +265,8 @@ bool_t program_loader_load_elf64(const uint8_t* file_data, uint32_t* pid) {
 
     // Passes the 64-bit entry point address to the process scheduler
     *pid = process_scheduler_add_process((void*)header.entry, new_PML4, false);
+
+    screen_print("[program_loader] added process to scheduler\n");
 
     return true;
 }

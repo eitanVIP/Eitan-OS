@@ -231,6 +231,20 @@ bool_t vmm_edit_page(uint64_t virt, uint64_t phys, uint64_t flags) {
     return true;
 }
 
+bool_t vmm_edit_pages(uint64_t start_virt, uint64_t end_virt, uint64_t flags) {
+    uint64_t amount = end_virt / PAGE_SIZE - start_virt / PAGE_SIZE + 1;
+    bool_t success = true;
+
+    for (uint64_t i = 0; i < amount; i++) {
+        bool_t s = vmm_edit_page(start_virt + i * PAGE_SIZE, null, flags);
+
+        if (!s)
+            success = false;
+    }
+
+    return success;
+}
+
 bool_t vmm_unmap_page(uint64_t virt) {
     PDPTable* pdpt_addr;
     PageDirectory* pd_addr;

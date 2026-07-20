@@ -74,6 +74,7 @@ void vmm_copy_kernel_PML4(PML4Table* to, PML4Table* from);
 void vmm_set_PML4(PML4Table* PML4);
 bool_t vmm_map_page(uint64_t virt, uint64_t phys, uint64_t flags);
 bool_t vmm_edit_page(uint64_t virt, uint64_t phys, uint64_t flags);
+bool_t vmm_edit_pages(uint64_t start_virt, uint64_t end_virt, uint64_t flags);
 bool_t vmm_unmap_page(uint64_t virt);
 bool_t vmm_is_mapped(uint64_t virt);
 bool_t vmm_are_mapped(uint64_t start_virt, uint64_t end_virt);
