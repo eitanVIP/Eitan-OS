@@ -66,7 +66,7 @@ void allocator_unmap_heap() {
     }
 }
 
-void* malloc_internal(block_t** free_list_ptr, size_t size, bool_t is_kernel) {
+void* malloc_internal(block_t** free_list_ptr, size_t size) {
     if (size == 0) return null;
 
     block_t* free_list = *free_list_ptr;
@@ -105,10 +105,10 @@ void* malloc_internal(block_t** free_list_ptr, size_t size, bool_t is_kernel) {
     return null; // out of memory
 }
 void* malloc(size_t size) {
-    return malloc_internal(data->free_list_ptr, size, false);
+    return malloc_internal(data->free_list_ptr, size);
 }
 void* malloc_kernel(size_t size) {
-    return malloc_internal(kernel_free_list_ptr, size, true);
+    return malloc_internal(kernel_free_list_ptr, size);
 }
 
 static bool_t are_pages_free(uint64_t start, uint64_t size, block_t* free_list) {

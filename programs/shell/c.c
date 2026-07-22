@@ -1,4 +1,21 @@
-void syscall(unsigned int num, unsigned int arg1, unsigned int arg2, unsigned int arg3) {
+#define null 0
+#define true 1
+#define false 0
+
+typedef char int8_t;
+typedef short int16_t;
+typedef int int32_t;
+typedef long long int64_t;
+
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+
+typedef uint64_t size_t;
+typedef uint8_t bool_t;
+
+void syscall(uint64_t num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
     asm volatile(
         "int $0x80"
         : // No output operands
@@ -11,21 +28,21 @@ void syscall(unsigned int num, unsigned int arg1, unsigned int arg2, unsigned in
 }
 
 void print(char* str) {
-    syscall(30, (unsigned int)str, 0, 0);
+    syscall(30, (uint64_t)str, 0, 0);
 }
 
 void clear_screen() {
     syscall(31, 0, 0, 0);
 }
 
-void* malloc(unsigned int size) {
+void* malloc(uint64_t size) {
     void* ptr;
-    syscall(10, size, (unsigned int)&ptr, 0);
+    syscall(10, size, (uint64_t)&ptr, 0);
     return ptr;
 }
 
 void free(void* ptr) {
-    syscall(11, (unsigned int)ptr, 0, 0);
+    syscall(11, (uint64_t)ptr, 0, 0);
 }
 
 void exit() {
@@ -33,11 +50,11 @@ void exit() {
 }
 
 // Returns the PID of the new process via the pid_out pointer
-void run_program(char* filename, unsigned int* pid_out) {
-    syscall(1, (unsigned int)filename, (unsigned int)pid_out, 0);
+void run_program(char* filename, uint32_t* pid_out) {
+    syscall(1, (uint64_t)filename, (uint64_t)pid_out, 0);
 }
 
-void kill_process(unsigned int pid) {
+void kill_process(uint32_t pid) {
     syscall(2, pid, 0, 0);
 }
 
@@ -50,15 +67,15 @@ char scancode_to_ascii[128] = {
     '*',0,' ','0','.'
 };
 
-unsigned short read_keyboard() {
-    unsigned short c = 0;
+uint16_t read_keyboard() {
+    uint16_t c = 0;
     while (c == 0) {
-        syscall(20, (unsigned int)&c, 0, 0);
+        syscall(20, (uint64_t)&c, 0, 0);
     }
     return c;
 }
 
-unsigned char is_character(unsigned short scancode) {
+bool_t is_character(uint16_t scancode) {
     if (scancode >= 256) return 0;
 
     char ascii = scancode_to_ascii[scancode];

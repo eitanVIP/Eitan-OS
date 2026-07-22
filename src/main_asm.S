@@ -209,18 +209,27 @@ IRQ_STUB 14
 IRQ_STUB 15
 
 syscall_handler_asm:
-    push qword 0
+    push qword 0 ; dummy error code for stack alignment
     PUSH_ALL
     LOAD_KERNEL_SEGS
 
+    ; Check if coming from user mode
     test byte [rsp + FRAME_CS], 3
     jz .call_handler
     swapgs
 
 .call_handler:
-    mov rdi, rsp        ; only arg: cpu_regs_t *
+    ; C function expects: (syscall_id, arg1, arg2, arg3, current_regs)
+
+    mov rdi, [rsp + 128]  ; Arg 1: syscall_id (rax)
+    mov rsi, [rsp + 120]  ; Arg 2: arg1 (rbx)
+    mov rdx, [rsp + 112]  ; Arg 3: arg2 (rcx)
+    mov rcx, [rsp + 104]  ; Arg 4: arg3 (rdx)
+    mov r8,  rsp          ; Arg 5: current_regs (pointer to saved regs)
+
     call syscall_handler_c
 
+    ; Swap GS back if returning to user space
     test byte [rsp + FRAME_CS], 3
     jz .done
     swapgs

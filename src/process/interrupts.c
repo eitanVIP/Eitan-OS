@@ -79,7 +79,6 @@ struct idt_ptr {
 
 __attribute__((aligned(0x10)))
 static idt_entry_t idt[256];
-static uint64_t hhdm_offset;
 
 void idt_set_descriptor(uint8_t vector, void* isr, uint8_t flags) {
     idt_entry_t* descriptor = &idt[vector];
@@ -190,9 +189,7 @@ void configure_PIT() {
     io_outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF); // High byte
 }
 
-void interrupts_init(uint64_t hhdm_offset_param) {
-    hhdm_offset = hhdm_offset_param;
-
+void interrupts_init() {
     vmm_map_page(LAPIC_BASE_VIRT, LAPIC_BASE, VMM_FLAGS_MMIO);
     vmm_map_page(IOAPIC_BASE_VIRT, IOAPIC_BASE, VMM_FLAGS_MMIO);
 
@@ -385,7 +382,6 @@ void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64
 
 
         case 20: // Read keyboard char (arg1 pointer to put char)
-            // *(uint16_t*)arg1 = io_keyboard_read();
             *(uint16_t*)arg1 = io_keyboard_buffer;
             io_keyboard_buffer = 0;
             break;
@@ -393,11 +389,11 @@ void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64
 
 
         case 30: // Print string (arg1 pointer to string)
-            VGA_screen_print((const char*)arg1);
+            screen_print((const char*)arg1);
             break;
 
         case 31: // Clear screen
-            VGA_screen_clear_screen();
+            screen_clear();
             break;
 
 

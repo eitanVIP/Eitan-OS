@@ -4,6 +4,4 @@
 
 #pragma once
 
-#include "../util/stdint.h"
-
-void interrupts_init(uint64_t hhdm_offset_param);
+void interrupts_init();
