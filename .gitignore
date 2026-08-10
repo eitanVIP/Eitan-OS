@@ -3,3 +3,4 @@ build/
 .gdb_history
 cmake-build-debug/
 programs/build/
+qemu.log
