@@ -16,5 +16,6 @@ char* str_concats(const char** strings, int count);
 unsigned char strcmp(const char* s1, const char* s2);
 int strncmp(const char *s1, const char *s2, size_t n);
 char* strchr(const char *s, int c);
+char** str_split(const char* str, char delim, int* out_count);
 
 #endif //STRING_H

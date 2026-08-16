@@ -187,3 +187,36 @@ char* strchr(const char *s, int c) {
 
     return null;
 }
+
+char** str_split(const char* str, char delim, int* out_count) {
+    int count = 0;
+    const char *p = str;
+
+    while (*p) {
+        while (*p == delim) p++;
+        if (!*p) break;
+        while (*p && *p != delim) p++;
+        count++;
+    }
+
+    char **tokens = malloc(count * sizeof(char *));
+    p = str;
+    int i = 0;
+
+    while (*p) {
+        while (*p == delim) p++;
+        if (!*p) break;
+
+        const char *start = p;
+        while (*p && *p != delim) p++;
+        size_t len = p - start;
+
+        tokens[i] = malloc(len + 1);
+        memcpy(tokens[i], start, len);
+        tokens[i][len] = '\0';
+        i++;
+    }
+
+    *out_count = count;
+    return tokens;
+}
