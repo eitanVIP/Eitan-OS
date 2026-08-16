@@ -46,6 +46,7 @@
 void process_scheduler_init(PML4Table* kernel_PML4);
 uint32_t process_scheduler_add_process(void* process_code_start, PML4Table* PML4, bool_t is_kernel_level);
 PML4Table* process_scheduler_get_kernel_PML4();
+PML4Table* process_scheduler_get_current_PML4();
 void process_scheduler_next_process(uint64_t* current_regs);
 bool_t process_scheduler_remove_process(uint32_t pid);
 void process_scheduler_send_signals(uint32_t pid, uint32_t signals);

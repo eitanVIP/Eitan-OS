@@ -102,30 +102,30 @@ void kernel_main(void) {
     else
         screen_print("[kernel] Failed to load shell\n");
 
-    // while (1) {
-    //     uint16_t scancode = io_keyboard_read();
-    //     io_keyboard_buffer = scancode;
-    //
-    //     if (!io_is_character(scancode)) {
-    //         switch (scancode & 0xFF) {
-    //             case 0x48: // Arrow Up
-    //                 screen_scroll(screen_get_scroll() - 1);
-    //                 break;
-    //
-    //             case 0x50: // Arrow Down
-    //                 screen_scroll(screen_get_scroll() + 1);
-    //                 break;
-    //
-    //             case 0x58: // F12
-    //                 screen_print("TEST\n");
-    //                 // process_scheduler_remove_process(pid);
-    //                 break;
-    //
-    //             default:
-    //                 break;
-    //         }
-    //     }
-    // }
+    while (1) {
+        uint16_t scancode = io_keyboard_read();
+        io_keyboard_buffer = scancode;
+
+        if (!io_is_character(scancode)) {
+            switch (scancode & 0xFF) {
+                case 0x48: // Arrow Up
+                    screen_scroll(screen_get_scroll() - 1);
+                    break;
+
+                case 0x50: // Arrow Down
+                    screen_scroll(screen_get_scroll() + 1);
+                    break;
+
+                case 0x58: // F12
+                    screen_print("TEST\n");
+                    // process_scheduler_remove_process(pid);
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
 
     while (1) {
         asm volatile("hlt");

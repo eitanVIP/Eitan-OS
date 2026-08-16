@@ -354,15 +354,27 @@ void irq_handler_c(uint32_t int_no, uint64_t* regs) {
 void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t* current_regs) {
     switch (syscall_id) {
         case 0: // Exit
+            vmm_set_PML4(process_scheduler_get_kernel_PML4());
+            vmm_load_cpu();
+
             process_scheduler_exit(current_regs);
             break;
 
         case 1: // Run program (arg1 pointer to name of file, arg2 pointer to put pid)
+            vmm_set_PML4(process_scheduler_get_kernel_PML4());
+            vmm_load_cpu();
+
             uint8_t* data1;
             uint32_t data_size1;
+            uint32_t pid;
             if (filesystem_read_file((const char*)arg1, &data1, &data_size1)) {
-                program_loader_load_elf32(data1, (uint32_t*)arg2);
+                program_loader_load_elf32(data1, &pid);
             }
+
+            vmm_set_PML4(process_scheduler_get_current_PML4());
+            vmm_load_cpu();
+
+            *(uint32_t*)arg2 = pid;
             break;
 
         case 2: // Close process (arg1 pid)

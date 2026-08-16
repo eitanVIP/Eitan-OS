@@ -123,6 +123,10 @@ PML4Table* process_scheduler_get_kernel_PML4() {
     return kernel_process->PML4;
 }
 
+PML4Table* process_scheduler_get_current_PML4() {
+    return current_process->PML4;
+}
+
 bool_t find_process(uint32_t pid, process_t** process_ptr) {
     *process_ptr = current_process;
     process_t* first_process = *process_ptr;
