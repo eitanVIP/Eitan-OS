@@ -8,6 +8,7 @@
 #include "memory/allocator.h"
 #include "util/util.h"
 #include "util/io.h"
+#include "util/panic.h"
 #include "util/string.h"
 
 // ATA protocol IO ports
@@ -34,6 +35,7 @@
 #define ATA_DRIVE_SELECT_MASTER_LBA 0b11100000
 #define ATA_DRIVE_SELECT_SLAVE_LBA  0b11110000
 
+// Filesystem constants
 #define MAGIC_NUMBER 0xE17A9055
 #define SECTOR_SIZE 512
 #define FILE_TABLE_SECTORS 20
@@ -41,6 +43,7 @@
 #define FILE_TABLE_ENTRIES (ENTRIES_PER_SECTOR * FILE_TABLE_SECTORS)
 #define FILE_TABLE_SIZE (FILE_TABLE_SECTORS * SECTOR_SIZE)
 #define MAX_FILES FILE_TABLE_ENTRIES
+#define FILE_NAME_LENGTH 60
 
 typedef struct {
     uint32_t magic_number;
@@ -52,7 +55,7 @@ typedef struct {
 } __attribute__((packed)) superblock_t;
 
 typedef struct {
-    char name[60];
+    char name[FILE_NAME_LENGTH];
     uint32_t file_table_index;
 } __attribute__((packed)) dir_entry_t;
 
@@ -70,18 +73,24 @@ static void wait_data_request_ready() {
 }
 
 static void identify_drive() {
+    screen_print("[filesystem] identifying drive\n");
+
     io_outb(ATA_DRIVE_SELECT, ATA_DRIVE_SELECT_SLAVE);
     io_outb(ATA_SECTORS, 0);
     io_outb(ATA_LBA_LOW, 0);
     io_outb(ATA_LBA_MID, 0);
     io_outb(ATA_LBA_HIGH, 0);
     io_outb(ATA_COMMAND_STATUS, 0xEC); // Command 0xEC: IDENTIFY
+
+    screen_print("[filesystem] sent identify command to drive\n");
     
     uint8_t status = io_inb(ATA_COMMAND_STATUS);
     if (status == 0) {
-        screen_print("Drive does not exist");
+        panic("drive does not exist");
         return;
     }
+
+    screen_print("[filesystem] drive exists\n");
     
     wait_busy();
     
@@ -89,9 +98,11 @@ static void identify_drive() {
     writable_drive = 1;
     if (io_inb(ATA_LBA_MID) != 0 || io_inb(ATA_LBA_HIGH) != 0) {
         writable_drive = 0;
-        screen_print("Not a writable drive");
+        panic("not a writeable drive");
         return;
     }
+
+    screen_print("[filesystem] drive is writeable\n");
     
     wait_data_request_ready();
     
@@ -99,6 +110,8 @@ static void identify_drive() {
     for (int i = 0; i < 256; i++) {
         data[i] = io_inw(ATA_DATA);
     }
+
+    screen_print("[filesystem] read identifying data from drive:\n");
     
     // Disk model
     for (int i = 0; i < 20; i++) {
@@ -106,8 +119,8 @@ static void identify_drive() {
         model[i * 2 + 1] = data[27 + i] & 0xFF;
     }
     model[40] = '\0';
-    char* strs[] = { "The disk model connected: ", model, "\n" };
-    char* msg = str_concats(strs, 3);
+    char* strs[] = { "[filesystem] the disk model connected: ", model, "\n" };
+    char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
     screen_print(msg);
     free(msg);
     
@@ -115,12 +128,18 @@ static void identify_drive() {
     memcpy(&sector_count, &data[60], 2);
     char* sector_count_str = num_to_str(sector_count);
     char* size_str = num_to_str((double)sector_count * SECTOR_SIZE);
-    char* strs2[] = { "Sector count: ", sector_count_str, ", Disk size: ", size_str, "\n" };
-    msg = str_concats(strs2, 5);
+    char* size_KB_str = num_to_str((uint64_t)sector_count * SECTOR_SIZE / 1000);
+    char* size_MB_str = num_to_str((uint64_t)sector_count * SECTOR_SIZE / 1000000);
+    char* size_GB_str = num_to_str((uint64_t)sector_count * SECTOR_SIZE / 1000000000);
+    char* strs2[] = { "[filesystem] sector count: ", sector_count_str, ", disk size: ", size_str, "B ", size_KB_str, "KB ", size_MB_str, "MB ", size_GB_str, "GB", "\n" };
+    msg = str_concats(strs2, sizeof(strs2) / sizeof(strs2[0]));
     screen_print(msg);
     free(msg);
     free(sector_count_str);
     free(size_str);
+    free(size_KB_str);
+    free(size_MB_str);
+    free(size_GB_str);
 }
 
 void read_sectors(uint32_t lba, void* target, size_t size) {
@@ -220,16 +239,21 @@ static void init_superblock() {
         SECTOR_SIZE
     };
     write_sectors(0, &superblock, sizeof(superblock));
-}
 
-void load_file_table() {
-    file_table = malloc(FILE_TABLE_SIZE);
-    read_sectors(1, file_table, FILE_TABLE_SIZE);
+    screen_print("[filesystem] wrote superblock\n");
 }
 
 void free_file_table() {
     free(file_table);
     file_table = 0;
+}
+
+void load_file_table() {
+    if (file_table != 0)
+        free_file_table();
+
+    file_table = malloc(FILE_TABLE_SIZE);
+    read_sectors(1, file_table, FILE_TABLE_SIZE);
 }
 
 bool_t find_root(uint32_t* file_index_ptr) {
@@ -252,14 +276,25 @@ bool_t find_root(uint32_t* file_index_ptr) {
 void ensure_root() {
     load_file_table();
 
+    screen_print("[filesystem] searching for root\n");
+
     uint32_t _;
-    if (find_root(&_))
+    if (find_root(&_)) {
+        screen_print("[filesystem] found root\n");
         return;
+    }
+
+    screen_print("[filesystem] root wasn't found, creating root...\n");
 
     memset(file_table, 0, FILE_TABLE_SIZE);
+    screen_print("[filesystem] deleted file table\n");
+
     file_table[0] = (file_entry_t){ MAGIC_NUMBER, ROOT_DIRECTORY, 1 + FILE_TABLE_SECTORS, 0 };
+    screen_print("[filesystem] created root entry\n");
 
     write_sectors(1, file_table, FILE_TABLE_SIZE);
+    screen_print("[filesystem] saved new file table with root\n");
+
     free_file_table();
 }
 
@@ -267,9 +302,38 @@ void filesystem_init(void) {
     identify_drive();
     init_superblock();
     ensure_root();
+
+    screen_print("[filesystem] filesystem init\n");
 }
 
-bool_t resolve_path(const char* path, uint32_t* file_index_ptr) {
+bool_t is_valid_path(const char *path) {
+    if (!path || path[0] != '/') return false;
+
+    size_t len = strlen(path);
+    if (len == 0) return false;
+
+    int component_len = 0;
+    for (size_t i = 1; i < len; i++) {
+        char c = path[i];
+
+        if (c == '/') {
+            if (component_len == 0) return false; // empty component, e.g. "//"
+            component_len = 0;
+            continue;
+        }
+
+        if (c == '\0') return false; // shouldn't happen given strlen, just safe
+
+        component_len++;
+        if (component_len > FILE_NAME_LENGTH) return false; // name too long
+    }
+
+    if (component_len == 0 && len > 1) return false; // trailing slash, e.g. "/foo/"
+
+    return true;
+}
+
+bool_t resolve_path(const char* path, uint32_t* file_entry_idx_out) {
     if (strlen(path) == 0)
         return false;
 
@@ -323,11 +387,29 @@ bool_t resolve_path(const char* path, uint32_t* file_index_ptr) {
             return false;
     }
 
-    *file_index_ptr = current_index;
+    *file_entry_idx_out = current_index;
     return true;
 }
 
-bool_t filesystem_read_file(const char* path, uint8_t** data_out, uint32_t* data_size_out, file_entry_t* file_entry_out) {
+void split_path(const char* path, char** dir_path_out, char** name_out) {
+    uint64_t last_slash_idx = (uint64_t)strrchr(path, '/') - (uint64_t)path;
+
+    size_t name_size = strlen(path) - last_slash_idx;
+    char* name = malloc(name_size); // Size of name at end of path, not including '/', including '\0'
+    char* dir_path = malloc(last_slash_idx + 2); // Size of path until name at the end, including last '/', including additional '\0'
+
+    memcpy(name, &path[last_slash_idx + 1], name_size);
+    memcpy(dir_path, path, last_slash_idx + 1);
+    dir_path[last_slash_idx + 1] = '\0';
+
+    *dir_path_out = dir_path;
+    *name_out = name;
+}
+
+bool_t filesystem_read_file(const char* path, uint8_t** data_out, size_t* data_size_out, uint32_t* file_entry_idx_out) {
+    if (!is_valid_path(path))
+        return false;
+
     load_file_table();
 
     uint32_t file_index;
@@ -346,13 +428,13 @@ bool_t filesystem_read_file(const char* path, uint8_t** data_out, uint32_t* data
     read_sectors(file_entry.start_sector, data, file_entry.size);
     *data_out = data;
     *data_size_out = file_entry.size;
-    *file_entry_out = file_entry;
+    *file_entry_idx_out = file_index;
 
     free_file_table();
     return true;
 }
 
-bool_t find_space_for_file(size_t file_size, uint32_t *file_start_sector) {
+bool_t find_space_for_file(size_t file_size, uint32_t *file_start_sector_out) {
     int order[FILE_TABLE_ENTRIES];
     int n = 0;
 
@@ -382,7 +464,7 @@ bool_t find_space_for_file(size_t file_size, uint32_t *file_start_sector) {
         file_entry_t *entry = &file_table[order[k]];
         uint32_t gap = entry->start_sector - prev_end;
         if (gap >= sectors_needed) {
-            *file_start_sector = prev_end;
+            *file_start_sector_out = prev_end;
             return true;
         }
         prev_end = entry->start_sector + (entry->size + SECTOR_SIZE - 1) / SECTOR_SIZE;
@@ -390,7 +472,7 @@ bool_t find_space_for_file(size_t file_size, uint32_t *file_start_sector) {
 
     uint32_t trailing_gap = sector_count - 1 - prev_end;
     if (trailing_gap >= sectors_needed) {
-        *file_start_sector = prev_end;
+        *file_start_sector_out = prev_end;
         return true;
     }
 
@@ -417,23 +499,104 @@ void shift_file_entries_backward(file_entry_t* file_table, uint8_t idx_start) {
     write_sectors(1, file_table, FILE_TABLE_SIZE);
 }
 
-bool_t add_file_to_dir(uint32_t dir_file_entry_idx, uint32_t file_entry_idx) {
-    filesystem_write_file();
+bool_t edit_file(uint32_t file_entry_idx, const uint8_t* data, size_t size) {
+    if (file_table[file_entry_idx].magic_number != MAGIC_NUMBER) // File doesn't exist
+        return false;
+
+    // Find space for new file
+    uint32_t file_start_sector;
+    file_table[file_entry_idx].magic_number = null; // Remove current file from search, so the new file can be in the same place
+    if (!find_space_for_file(size, &file_start_sector)) {
+        file_table[file_entry_idx].magic_number = MAGIC_NUMBER;
+        return false;
+    }
+
+    // Update entry
+    file_table[file_entry_idx].magic_number = MAGIC_NUMBER;
+    file_table[file_entry_idx].start_sector = file_start_sector;
+
+    // Write file data to disk
+    write_sectors(file_start_sector, data, size);
+
+    // Update file table on disk
+    write_sectors(1, file_table, FILE_TABLE_SIZE);
+
+    return true;
 }
 
-bool_t remove_file_from_dir(const char* dir_path, const char* file_path) {
+bool_t add_file_to_dir(uint32_t dir_file_entry_idx, uint32_t file_entry_idx, const char* name) {
+    // Current dir entries
+    size_t entries_count = file_table[dir_file_entry_idx].size / sizeof(dir_entry_t) + 1; // Plus 1 for new file
+    dir_entry_t* entries = malloc(entries_count * sizeof(dir_entry_t));
 
+    // Load current dir entries
+    if (file_table[dir_file_entry_idx].size > 0)
+        read_sectors(file_table[dir_file_entry_idx].start_sector, entries, file_table[dir_file_entry_idx].size);
+
+    // Add new file to dir entries
+    entries[entries_count - 1].file_table_index = file_entry_idx;
+    memcpy(entries[entries_count - 1].name, name, min(strlen(name) + 1, FILE_NAME_LENGTH));
+    entries[entries_count - 1].name[FILE_NAME_LENGTH - 1] = '\0';
+
+    // Edit dir file
+    bool_t success = edit_file(dir_file_entry_idx, (uint8_t*)entries, entries_count * sizeof(dir_entry_t));
+    free(entries);
+    return success;
+}
+
+bool_t remove_file_from_dir(uint32_t dir_file_entry_idx, uint32_t file_entry_idx) {
+    // Current dir entries
+    size_t old_entries_count = file_table[dir_file_entry_idx].size / sizeof(dir_entry_t);
+    dir_entry_t* old_entries = malloc(old_entries_count * sizeof(dir_entry_t));
+
+    // Load current dir entries
+    if (file_table[dir_file_entry_idx].size > 0)
+        read_sectors(file_table[dir_file_entry_idx].start_sector, old_entries, file_table[dir_file_entry_idx].size);
+
+    // Copy old entries, not including the removed one
+    size_t new_entries_count = old_entries_count -1;
+    dir_entry_t* new_entries = malloc(new_entries_count * sizeof(dir_entry_t));
+    uint64_t j = 0;
+    for (uint64_t i = 0; i < old_entries_count; i++) {
+        if (old_entries[i].file_table_index != file_entry_idx)
+            new_entries[j++] = old_entries[i];
+    }
+
+    // Edit dir file
+    bool_t success = edit_file(dir_file_entry_idx, (uint8_t*)new_entries, new_entries_count * sizeof(dir_entry_t));
+    free(old_entries);
+    free(new_entries);
+    return success;
+}
+
+uint32_t find_file_entry_slot() {
+    for (uint32_t i = 0; i < FILE_TABLE_ENTRIES; i++) {
+        if (file_table[i].magic_number != MAGIC_NUMBER)
+            return i;
+    }
+
+    return -1;
 }
 
 bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t type, size_t size) {
+    if (!is_valid_path(path))
+        return false;
+
     // Check if file already exists
     uint8_t* _;
     uint32_t _2;
-    file_entry_t current_file_entry;
-    bool_t new_file = !filesystem_read_file(path, &_, &_2, &current_file_entry);
+    uint32_t current_file_entry_idx;
+    bool_t new_file = !filesystem_read_file(path, &_, &_2, &current_file_entry_idx);
     free(_);
 
     load_file_table();
+
+    // If not new file, edit file
+    if (!new_file) {
+        bool_t success = edit_file(current_file_entry_idx, data, size);
+        free_file_table();
+        return success;
+    }
 
     // Find space for new file
     uint32_t file_start_sector = 0;
@@ -442,201 +605,168 @@ bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t 
         return false;
     }
 
-    // Find file entry for new file
-    uint8_t file_entry_idx = -1;
-    if (new_file) { // If new file find an empty slot in the table
-        for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-            if (file_table[i].magic_number != MAGIC_NUMBER) {
-                file_entry_idx = i;
-                break;
-            }
-        }
-    } else { // If file already exists find the existing entry
-        for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-            if (file_table[i].magic_number == MAGIC_NUMBER) {
-                if (file_table[i].start_sector == current_file_entry.start_sector) {
-                    file_entry_idx = i;
-                    break;
-                }
-            }
-        }
-    }
+    // Find free file entry slot
+    uint32_t file_entry_idx = find_file_entry_slot();
     if (file_entry_idx == -1) {
         free_file_table();
         return false;
     }
 
-    // Delete old file
-    if (!new_file) {
-        filesystem_delete_file(path); // TODO: don't delete file before checks that can return
-    }
-
-    // Create/Update file entry
+    // Create file entry
     file_entry_t new_file_entry = (file_entry_t){ MAGIC_NUMBER, type, file_start_sector, size };
     file_table[file_entry_idx] = new_file_entry;
 
-    if (new_file) {
-        add_file_to_dir();
+    // Extract name and dir_path from path
+    char* dir_path;
+    char* name;
+    split_path(path, &dir_path, &name);
+
+    // Add file to dir
+    uint32_t dir_file_index;
+    if (!resolve_path(dir_path, &dir_file_index)) {
+        free(name);
+        free(dir_path);
+        free_file_table();
+        return false;
     }
+    add_file_to_dir(dir_file_index, file_entry_idx, name);
+
+    free(name);
+    free(dir_path);
+
+    // Save updated file table
+    // write_sectors(1, file_table, FILE_TABLE_SIZE); COMMENTED BECAUSE add_file_to_dir ALREADY SAVES FILE TABLE CHANGES
 
     // Save file data
     write_sectors(file_start_sector, data, size);
 
-    // Save updated file table
+    free_file_table();
+    return true;
+}
+
+bool_t filesystem_delete_file(const char* path) {
+    if (!is_valid_path(path))
+        return false;
+
+    load_file_table();
+
+    // Find file entry
+    uint32_t file_entry_idx;
+    if (!resolve_path(path, &file_entry_idx)) {
+        free_file_table();
+        return false;
+    }
+
+    // Find dir path
+    char* dir_path;
+    char* name;
+    split_path(path, &dir_path, &name);
+
+    // Find file's dir's file entry
+    uint32_t dir_file_entry_idx;
+    if (!resolve_path(dir_path, &dir_file_entry_idx)) {
+        free(dir_path);
+        free(name);
+        free_file_table();
+        return false;
+    }
+
+    // Remove file from its dir
+    if (!remove_file_from_dir(dir_file_entry_idx, file_entry_idx)) {
+        free(dir_path);
+        free(name);
+        free_file_table();
+        return false;
+    }
+
+    // Remove file entry
+    file_table[file_entry_idx].magic_number = null;
+
+    // Save file table changes
     write_sectors(1, file_table, FILE_TABLE_SIZE);
 
     free_file_table();
     return true;
 }
 
-bool_t filesystem_delete_file(const char* name) {
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    read_sectors(1, file_table, FILE_TABLE_SIZE);
+bool_t filesystem_create_directory(const char* path) {
+    uint8_t data = 0;
+    return filesystem_write_file(path, &data, DIRECTORY, 0);
+}
 
-    file_entry_t file_entry = (file_entry_t){};
-    int file_entry_idx = 0;
-    bool_t found = 0;
+bool_t filesystem_move_file(const char* path, const char* new_path) {
+    if (!is_valid_path(path) || !is_valid_path(new_path))
+        return false;
 
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        file_entry = file_table[i];
-        if (file_entry.magic_number != MAGIC_NUMBER)
-            continue;
+    // Split paths
+    char* dir_path;
+    char* name;
+    split_path(path, &dir_path, &name);
+    char* new_dir_path;
+    char* new_name;
+    split_path(new_path, &new_dir_path, &new_name);
 
-        if (strcmp(file_entry.name, name)) {
-            file_entry_idx = i;
-            found = 1;
-            break;
-        }
+    // Find file entry
+    uint32_t file_entry_idx;
+    if (!resolve_path(path, &file_entry_idx)) {
+        goto fail;
     }
 
-    free(file_table);
+    // Find file's dir's file entry
+    uint32_t dir_file_entry_idx;
+    if (!resolve_path(dir_path, &dir_file_entry_idx)) {
+        goto fail;
+    }
 
-    if (!found)
-        return 0;
+    // Find new file's dir's file entry
+    uint32_t new_dir_file_entry_idx;
+    if (!resolve_path(new_dir_path, &new_dir_file_entry_idx)) {
+        goto fail;
+    }
 
-    file_table[file_entry_idx] = (file_entry_t){};
-    shift_file_entries_backward(file_table, file_entry_idx + 1);
+    // Move the file
+    remove_file_from_dir(dir_file_entry_idx, file_entry_idx);
+    add_file_to_dir(new_dir_file_entry_idx, file_entry_idx, new_name);
 
-    return 1;
+    free(dir_path);
+    free(name);
+    free(new_dir_path);
+    free(new_name);
+    free_file_table();
+    return true;
+
+fail:
+    free(dir_path);
+    free(name);
+    free(new_dir_path);
+    free(new_name);
+    free_file_table();
+    return false;
 }
 
-// bool_t filesystem_create_directory(const char* path) {
-//
-// }
-//
-// bool_t filesystem_directory_move_file(const char* path) {
-//
-// }
+char** filesystem_list_dir(const char* path, uint64_t* file_count) {
+    // Read dir file
+    dir_entry_t* entries;
+    size_t data_size;
+    uint32_t file_entry_idx;
+    if (!filesystem_read_file(path, (uint8_t**)&entries, &data_size, &file_entry_idx))
+        return false;
 
-char** filesystem_list_files(const char* path, int* file_count) {
-    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    //
-    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-    //
-    // int count = 0;
-    // int path_len = strlen(path);
-    //
-    // int needs_trailing_slash = (path_len > 0 && path[path_len - 1] != '/') ? 1 : 0;
-    //
-    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-    //     if (file_table[i].magic_number != MAGIC_NUMBER) continue;
-    //
-    //     const char* name = file_table[i].name;
-    //
-    //     if (strncmp(name, path, path_len)) {
-    //         const char* relative_name = name + path_len;
-    //
-    //         if (*relative_name == '\0') continue;
-    //
-    //         if (strchr(relative_name, '/') == null) {
-    //             count++;
-    //         }
-    //     }
-    // }
-    //
-    // // Allocate exact size needed
-    // char** files = malloc(count * sizeof(char*));
-    //
-    // int j = 0;
-    // for (int i = 0; i < FILE_TABLE_ENTRIES && j < count; i++) {
-    //     if (file_table[i].magic_number != MAGIC_NUMBER) continue;
-    //
-    //     const char* name = file_table[i].name;
-    //     if (strncmp(name, path, path_len)) {
-    //         const char* relative_name = name + path_len;
-    //         if (*relative_name == '\0') continue;
-    //
-    //         if (strchr(relative_name, '/') == null) {
-    //             files[j++] = strdup(name);
-    //         }
-    //     }
-    // }
-    //
-    // free(file_table);
-    // *file_count = j;
-    // return files;
-}
+    // Allocate array
+    size_t entries_count = data_size / sizeof(dir_entry_t);
+    char** names = malloc(entries_count * sizeof(char*));
 
-char** filesystem_list_dirs(const char* path, int* dir_count) {
-    // file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    // if (!file_table) return null;
-    //
-    // filesystem_read_sectors(1, file_table, FILE_TABLE_SIZE);
-    //
-    // int count = 0;
-    // int path_len = strlen(path);
-    // char** found_dirs = malloc(FILE_TABLE_ENTRIES * sizeof(char*));
-    //
-    // for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-    //     if (file_table[i].magic_number != MAGIC_NUMBER) continue;
-    //
-    //     const char* name = file_table[i].name;
-    //
-    //     if (strncmp(name, path, path_len)) {
-    //         const char* relative = name + path_len;
-    //
-    //         char* next_slash = strchr(relative, '/');
-    //
-    //         if (next_slash != null) {
-    //             int full_dir_path_len = (next_slash - name) + 1;
-    //
-    //             char* dir_full_path = malloc(full_dir_path_len + 1);
-    //             memcpy(dir_full_path, name, full_dir_path_len);
-    //             dir_full_path[full_dir_path_len] = '\0';
-    //
-    //             bool_t is_duplicate = false;
-    //             for (int k = 0; k < count; k++) {
-    //                 // FIX: strcmp returns 0 on match.
-    //                 if (strcmp(found_dirs[k], dir_full_path)) {
-    //                     is_duplicate = true;
-    //                     break;
-    //                 }
-    //             }
-    //
-    //             if (!is_duplicate) {
-    //                 found_dirs[count++] = dir_full_path;
-    //             } else {
-    //                 free(dir_full_path);
-    //             }
-    //         }
-    //     }
-    // }
-    //
-    // free(file_table);
-    //
-    // char** result = malloc(count * sizeof(char*));
-    // if (result) {
-    //     memcpy(result, found_dirs, count * sizeof(char*));
-    // }
-    //
-    // free(found_dirs);
-    // *dir_count = count;
-    // return result;
+    // Fill array with allocated names
+    for (uint64_t i = 0; i < entries_count; i++) {
+        names[i] = strdup(entries[i].name);
+    }
+
+    *file_count = entries_count;
+    return names;
 }
 
 void filesystem_print_all_entries() {
-    file_entry_t* file_table = malloc(FILE_TABLE_SIZE);
-    read_sectors(1, file_table, FILE_TABLE_SIZE);
+    load_file_table();
 
     screen_print("Printing All File Entries:\n");
     for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
@@ -646,7 +776,7 @@ void filesystem_print_all_entries() {
         char* id = num_to_str(i);
         char* sector = num_to_str(file_table[i].start_sector);
         char* size = num_to_str(file_table[i].size);
-        char* strs[] = { "Id: ", id, "\n", "Name: ", file_table[i].name, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
+        char* strs[] = { "Id: ", id, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
         char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
         screen_print(msg);
         free(id);
@@ -656,5 +786,55 @@ void filesystem_print_all_entries() {
     }
     screen_print("------------------------------\n");
 
-    free(file_table);
+    free_file_table();
+}
+
+void print_tree_recursive(uint32_t dir_index, int depth) {
+    file_entry_t dir_entry = file_table[dir_index];
+    if (dir_entry.size == 0)
+        return;
+
+    dir_entry_t* entries = malloc(dir_entry.size);
+    read_sectors(dir_entry.start_sector, entries, dir_entry.size);
+    uint32_t count = dir_entry.size / sizeof(dir_entry_t);
+
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t idx = entries[i].file_table_index;
+        file_entry_t entry = file_table[idx];
+        if (entry.magic_number != MAGIC_NUMBER)
+            continue;
+
+        for (int d = 0; d < depth; d++)
+            screen_print("  ");
+
+        bool_t is_dir = entry.type == DIRECTORY || entry.type == ROOT_DIRECTORY;
+        char* idx_str = num_to_str(idx);
+        char* strs[] = { is_dir ? "[DIR] " : "[FILE] ", entries[i].name, " (idx ", idx_str, ")\n" };
+        char* msg = str_concats(strs, 5);
+        screen_print(msg);
+        free(msg);
+        free(idx_str);
+
+        if (is_dir)
+            print_tree_recursive(idx, depth + 1);
+    }
+
+    free(entries);
+}
+
+void filesystem_print_tree() {
+    load_file_table();
+
+    uint32_t root_index;
+    if (!find_root(&root_index)) {
+        screen_print("No root directory found\n");
+        free_file_table();
+        return;
+    }
+
+    screen_print("Filesystem Tree:\n");
+    print_tree_recursive(root_index, 0);
+    screen_print("------------------------------\n");
+
+    free_file_table();
 }

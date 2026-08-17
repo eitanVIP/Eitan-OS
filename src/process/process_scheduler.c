@@ -67,14 +67,14 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
     bool_t success = allocator_heap_init(HEAP_START_KERNEL, HEAP_SIZE, true);
 
     if (!success)
-        panic("Failed to initialize heap for kernel");
+        panic("failed to initialize heap for kernel");
 
     screen_print("[process_scheduler] heap init\n");
 
     current_process = malloc(sizeof(process_t));
 
     if (current_process == null)
-        panic("Failed to initialize kernel process tracking");
+        panic("failed to initialize kernel process tracking");
 
     current_process->pid = 0;
     current_process->regs = (cpu_state_t){};

@@ -188,6 +188,15 @@ char* strchr(const char *s, int c) {
     return null;
 }
 
+char* strrchr(const char *s, char c) {
+    char* last = null;
+    while (*s) {
+        if (*s == c) last = (char *)s;
+        s++;
+    }
+    return last;
+}
+
 char** str_split(const char* str, char delim, int* out_count) {
     int count = 0;
     const char *p = str;

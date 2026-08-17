@@ -90,17 +90,17 @@ void kernel_main(void) {
     process_scheduler_init(kernel_PML4);
     interrupts_init();
 
+    filesystem_init();
+
     screen_print("[kernel] Eitan OS Started...\n");
     screen_print("[kernel] Hello user!\n");
 
-    // filesystem_init();
-
-    uint32_t pid;
-    bool_t success = program_loader_load_elf64(shell_program_get(), &pid);
-    if (success)
-        screen_print("[kernel] Loaded shell\n");
-    else
-        screen_print("[kernel] Failed to load shell\n");
+    // uint32_t pid;
+    // bool_t success = program_loader_load_elf64(shell_program_get(), &pid);
+    // if (success)
+    //     screen_print("[kernel] loaded shell\n");
+    // else
+    //     screen_print("[kernel] failed to load shell\n");
 
     while (1) {
         uint16_t scancode = io_keyboard_read();
