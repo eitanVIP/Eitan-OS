@@ -343,9 +343,6 @@ bool_t resolve_path(const char* path, uint32_t* file_entry_idx_out) {
     int path_parts_count;
     char** path_parts = str_split(path, '/', &path_parts_count);
 
-    if (path_parts_count == 0)
-        return false;
-
     uint32_t root_index;
     if (!find_root(&root_index))
         return false;
@@ -584,10 +581,11 @@ bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t 
 
     // Check if file already exists
     uint8_t* _;
-    uint32_t _2;
+    size_t _2;
     uint32_t current_file_entry_idx;
     bool_t new_file = !filesystem_read_file(path, &_, &_2, &current_file_entry_idx);
-    free(_);
+    if (!new_file)
+        free(_);
 
     load_file_table();
 
@@ -629,7 +627,12 @@ bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t 
         free_file_table();
         return false;
     }
-    add_file_to_dir(dir_file_index, file_entry_idx, name);
+    if (!add_file_to_dir(dir_file_index, file_entry_idx, name)) {
+        free(name);
+        free(dir_path);
+        free_file_table();
+        return false;
+    }
 
     free(name);
     free(dir_path);

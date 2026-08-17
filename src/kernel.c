@@ -95,6 +95,12 @@ void kernel_main(void) {
     screen_print("[kernel] Eitan OS Started...\n");
     screen_print("[kernel] Hello user!\n");
 
+    bool_t success = filesystem_write_file("/file1.txt", "Le data", FILE, 8);
+    screen_print(success ? "[ok]\n" : "[failed]\n");
+
+    filesystem_print_all_entries();
+    filesystem_print_tree();
+
     // uint32_t pid;
     // bool_t success = program_loader_load_elf64(shell_program_get(), &pid);
     // if (success)
