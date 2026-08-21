@@ -95,11 +95,28 @@ void kernel_main(void) {
     screen_print("[kernel] Eitan OS Started...\n");
     screen_print("[kernel] Hello user!\n");
 
-    bool_t success = filesystem_write_file("/file1.txt", "Le data", FILE, 8);
-    screen_print(success ? "[ok]\n" : "[failed]\n");
+    // filesystem_write_file("/file1.txt", "Le data", FILE, 8);
+    // filesystem_write_file("/file2.txt", "Le data", FILE, 8);
+    // filesystem_write_file("/file3.txt", "Le data", FILE, 8);
+    // filesystem_create_directory("/dir1");
+    filesystem_write_file("/dir1/file1.txt", "Le data", FILE, 8);
+    // filesystem_write_file("/dir1/file2.txt", "Le data", FILE, 8);
+    // filesystem_write_file("/dir1/file3.txt", "Le data", FILE, 8);
+    // filesystem_create_directory("/dir1/dir2");
+    // filesystem_write_file("/dir1/dir2/file1.txt", "Le data", FILE, 8);
+    // filesystem_write_file("/dir1/dir2/file2.txt", "Le data", FILE, 8);
+    // filesystem_write_file("/dir1/dir2/file3.txt", "Le data", FILE, 8);
+
+    // bool_t success = filesystem_write_file("/", "a", ROOT_DIRECTORY, 2);
+    // screen_print(success ? "[ok]\n" : "[failed]\n");
 
     filesystem_print_all_entries();
     filesystem_print_tree();
+
+    // uint8_t* data_ptr;
+    // size_t data_size;
+    // uint32_t file_entry_idx;
+    // filesystem_read_file("/", &data_ptr, &data_size, &file_entry_idx);
 
     // uint32_t pid;
     // bool_t success = program_loader_load_elf64(shell_program_get(), &pid);

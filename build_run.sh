@@ -1,5 +1,8 @@
 #!/bin/bash
 set -e
+GREEN='\033[1;32m'
+NC='\033[0m' # No Color
+log() { echo -e "${GREEN}[*] $1${NC}"; }
 
 # Paths
 BUILD_DIR="build"
@@ -7,7 +10,10 @@ SRC_DIR="src"
 LINKER_SCRIPT="linker.ld"
 KERNEL_ELF="$BUILD_DIR/kernel.elf"
 
+log "Compiling programs..."
 ./programs/compile.sh shell
+
+log "Compiling fonts..."
 ./fonts/compile.sh zap
 
 # Clean and recreate build dir
@@ -15,12 +21,12 @@ rm -rf $BUILD_DIR
 mkdir -p $BUILD_DIR
 
 # Run CMake to compile all .c/.S in src/ into .o files
-echo "[*] Running CMake build..."
+log "Running CMake build..."
 cmake -S . -B $BUILD_DIR
 cmake --build $BUILD_DIR
 
 # Link everything from build/*.o
-echo "[*] Linking kernel..."
+log "Linking kernel..."
 ld -m elf_x86_64 \
    -z max-page-size=0x1000 \
    -T $LINKER_SCRIPT \
@@ -28,6 +34,7 @@ ld -m elf_x86_64 \
    $BUILD_DIR/kernel.o $(ls $BUILD_DIR/*.o | grep -v "kernel.o")
 
 # Create ISO folder for limine
+log "Downloading limine bootloader..."
 curl -L https://github.com/Limine-Bootloader/Limine/releases/latest/download/limine-binary.tar.gz | gunzip | tar -xf -
 mv limine-binary $BUILD_DIR/limine-binary
 make -C $BUILD_DIR/limine-binary
@@ -39,7 +46,7 @@ cp limine-uefi-cd.bin $BUILD_DIR/iso/limine-uefi-cd.bin
 cp limine-bios-cd.bin $BUILD_DIR/iso/limine-bios-cd.bin
 cp limine-bios.sys $BUILD_DIR/iso/limine-bios.sys
 cp $KERNEL_ELF $BUILD_DIR/iso/kernel.elf
-
+log "Configuring limine bootloader..."
 printf "timeout: 0\n\n/eitanos\nprotocol: limine\npath: boot():/kernel.elf" > $BUILD_DIR/iso/limine.conf
 
 xorriso -as mkisofs -R -r -J -b limine-bios-cd.bin \
@@ -49,6 +56,12 @@ xorriso -as mkisofs -R -r -J -b limine-bios-cd.bin \
         "$BUILD_DIR/iso" -o "$BUILD_DIR/eitanos.iso"
 $BUILD_DIR/limine-binary/limine bios-install "$BUILD_DIR/eitanos.iso"
 
+# Check for disk.img, create if missing
+if [ ! -f disk.img ]; then
+    log "disk.img not found, creating..."
+    qemu-img create -f raw disk.img 10M
+fi
+
 # Launch in QEMU
-echo "[*] Launching QEMU..."
-qemu-system-x86_64 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -bios /usr/share/ovmf/OVMF.fd -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio -d int -D qemu.log -S -s
+log "Launching QEMU..."
+qemu-system-x86_64 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -bios /usr/share/ovmf/OVMF.fd -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio -d int -D qemu.log #-S -s

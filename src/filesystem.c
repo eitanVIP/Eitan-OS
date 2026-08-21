@@ -511,6 +511,7 @@ bool_t edit_file(uint32_t file_entry_idx, const uint8_t* data, size_t size) {
     // Update entry
     file_table[file_entry_idx].magic_number = MAGIC_NUMBER;
     file_table[file_entry_idx].start_sector = file_start_sector;
+    file_table[file_entry_idx].size = size;
 
     // Write file data to disk
     write_sectors(file_start_sector, data, size);
@@ -620,14 +621,14 @@ bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t 
     split_path(path, &dir_path, &name);
 
     // Add file to dir
-    uint32_t dir_file_index;
-    if (!resolve_path(dir_path, &dir_file_index)) {
+    uint32_t dir_file_entry_idx;
+    if (!resolve_path(dir_path, &dir_file_entry_idx)) {
         free(name);
         free(dir_path);
         free_file_table();
         return false;
     }
-    if (!add_file_to_dir(dir_file_index, file_entry_idx, name)) {
+    if (!add_file_to_dir(dir_file_entry_idx, file_entry_idx, name)) {
         free(name);
         free(dir_path);
         free_file_table();

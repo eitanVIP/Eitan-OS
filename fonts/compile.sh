@@ -1,5 +1,3 @@
-echo "[**] Compiling fonts"
-
 if [[ -z "$1" ]]; then
   echo "Usage: ./compile.sh <font_name>"
   exit 1
