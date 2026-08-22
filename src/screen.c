@@ -24,7 +24,9 @@ void screen_init(struct limine_framebuffer* framebuffer) {
 }
 
 void screen_put_pixel(uint32_t x, uint32_t y, uint32_t color) {
-    uint32_t *row = (uint32_t *)((uint8_t *)fb->address + y * fb->pitch);
+    if (x >= fb->width || y >= fb->height) return;
+
+    uint32_t* row = (uint32_t *)((uint8_t *)fb->address + y * fb->pitch);
     row[x] = color;
 }
 
@@ -55,8 +57,33 @@ void screen_load_font(uint8_t* font) {
         current_font = null;
 }
 
+uint32_t screen_get_font_char_width() {
+    if (current_font == null)
+        return 0;
+
+    if (is_current_font_psf2)
+        return ((PSF2_header*)current_font)->width;
+    else
+        return 8;
+}
+
+uint32_t screen_get_font_char_height() {
+    if (current_font == null)
+        return 0;
+
+    if (is_current_font_psf2)
+        return ((PSF2_header*)current_font)->height;
+    else
+        return ((PSF1_header*)current_font)->charsize;
+}
+
 void screen_put_char(char c, uint32_t x, uint32_t y, uint32_t fg_color, uint32_t bg_color) {
     if (current_font == null)
+        return;
+
+    uint64_t width = fb->width / screen_get_font_char_width();
+    uint64_t height = fb->height / screen_get_font_char_height();
+    if (x >= width || y >= height)
         return;
 
     if (is_current_font_psf2) {
@@ -85,26 +112,6 @@ void screen_put_char(char c, uint32_t x, uint32_t y, uint32_t fg_color, uint32_t
             }
         }
     }
-}
-
-uint32_t screen_get_font_char_width() {
-    if (current_font == null)
-        return 0;
-
-    if (is_current_font_psf2)
-        return ((PSF2_header*)current_font)->width;
-    else
-        return 8;
-}
-
-uint32_t screen_get_font_char_height() {
-    if (current_font == null)
-        return 0;
-
-    if (is_current_font_psf2)
-        return ((PSF2_header*)current_font)->height;
-    else
-        return ((PSF1_header*)current_font)->charsize;
 }
 
 #define BUFFER_SIZE 0x4000
@@ -178,18 +185,8 @@ void screen_flush() {
 
     uint64_t buffer_end_clamped = min(buffer_end, buffer_start + width * height);
     for (uint64_t i = buffer_start; i < buffer_end_clamped; i++) {
-        // if (buffer[i] == '\n') {
-        //     cursor_x = 0;
-        //     cursor_y++;
-        // } else if (buffer[i] == 8) { // backspace
-        //     screen_put_char(' ', cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
-        //     cursor_x--;
-        //     screen_norm_cursor();
-        // } else {
-        //     screen_put_char(buffer[i], cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
-        //     cursor_x++;
-        //     screen_norm_cursor();
-        // }
+        if (cursor_y >= height)
+            break;
 
         if (buffer[i] == 0) {
             screen_put_char(' ', cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
@@ -208,10 +205,10 @@ void screen_flush() {
         }
     }
 
-    for(; cursor_y < height; cursor_y++) {
-        for(; cursor_x < width; cursor_x++) {
-            screen_put_char(' ', cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
-        }
+    for(; cursor_y < height;) {
+        screen_put_char(' ', cursor_x, cursor_y, screen_make_color(255, 255, 255), screen_make_color(0, 0, 0));
+        cursor_x++;
+        screen_norm_cursor();
     }
 }
 
@@ -221,7 +218,7 @@ void screen_print(const char* msg) {
     for (int i = 0; msg[i] != '\0'; i++) {
         // Prevent buffer overflow
         if (buffer_end >= BUFFER_SIZE) {
-            screen_flush();
+            // screen_flush();
             buffer_end = 0;
         }
 

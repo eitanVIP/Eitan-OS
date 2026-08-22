@@ -7,17 +7,17 @@
 #include "util/util.h"
 #include "memory/allocator.h"
 
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
-#define BUFFER_SIZE (VGA_WIDTH * VGA_HEIGHT * 3)
-
-volatile uint16_t* VGA = (uint16_t*)0xB8000;
-int cursor_x = 0;
-int cursor_y = 0;
-
-char buffer[BUFFER_SIZE] = {};
-int scroll = 0;
-int buffer_end = 0;
+// #define VGA_WIDTH 80
+// #define VGA_HEIGHT 25
+// #define BUFFER_SIZE (VGA_WIDTH * VGA_HEIGHT * 3)
+//
+// volatile uint16_t* VGA = (uint16_t*)0xB8000;
+// int cursor_x = 0;
+// int cursor_y = 0;
+//
+// char buffer[BUFFER_SIZE] = {};
+// int scroll = 0;
+// int buffer_end = 0;
 
 void VGA_screen_put_char(char c, int x, int y) {
     // if (cursor_y >= VGA_HEIGHT || cursor_x >= VGA_WIDTH)

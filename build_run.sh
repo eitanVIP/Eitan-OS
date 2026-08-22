@@ -64,4 +64,4 @@ fi
 
 # Launch in QEMU
 log "Launching QEMU..."
-qemu-system-x86_64 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -bios /usr/share/ovmf/OVMF.fd -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio -d int -D qemu.log -S -s
+qemu-system-x86_64 -drive file=$BUILD_DIR/eitanos.iso,format=raw,index=0,media=cdrom -bios /usr/share/ovmf/OVMF.fd -drive file=disk.img,format=raw,index=1,media=disk -boot d -m 512 -serial stdio -d int -D qemu.log #-S -s

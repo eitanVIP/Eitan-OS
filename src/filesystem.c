@@ -772,30 +772,6 @@ char** filesystem_list_dir(const char* path, uint64_t* file_count) {
     return names;
 }
 
-void filesystem_print_all_entries() {
-    load_file_table();
-
-    screen_print("Printing All File Entries:\n");
-    for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
-        if (file_table[i].magic_number != MAGIC_NUMBER)
-            break;
-
-        char* id = num_to_str(i);
-        char* sector = num_to_str(file_table[i].start_sector);
-        char* size = num_to_str(file_table[i].size);
-        char* strs[] = { "Id: ", id, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
-        char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
-        screen_print(msg);
-        free(id);
-        free(sector);
-        free(size);
-        free(msg);
-    }
-    screen_print("------------------------------\n");
-
-    free_file_table();
-}
-
 void print_tree_recursive(uint32_t dir_index, int depth) {
     file_entry_t dir_entry = file_table[dir_index];
     if (dir_entry.size == 0)
@@ -829,18 +805,36 @@ void print_tree_recursive(uint32_t dir_index, int depth) {
     free(entries);
 }
 
-void filesystem_print_tree() {
+void filesystem_print_state(bool_t include_entries) {
     load_file_table();
 
-    uint32_t root_index;
-    if (!find_root(&root_index)) {
-        screen_print("No root directory found\n");
-        free_file_table();
-        return;
+    screen_print("------ Filesystem State ------\n");
+    if (include_entries) {
+        screen_print("File Entries:\n");
+        for (int i = 0; i < FILE_TABLE_ENTRIES; i++) {
+            if (file_table[i].magic_number != MAGIC_NUMBER)
+                break;
+
+            char* id = num_to_str(i);
+            char* sector = num_to_str(file_table[i].start_sector);
+            char* size = num_to_str(file_table[i].size);
+            char* strs[] = { "Id: ", id, "\n", "Sector: ", sector, "\n", "Size: ", size, "\n\n" };
+            char* msg = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
+            screen_print(msg);
+            free(id);
+            free(sector);
+            free(size);
+            free(msg);
+        }
     }
 
     screen_print("Filesystem Tree:\n");
-    print_tree_recursive(root_index, 0);
+    uint32_t root_index;
+    if (find_root(&root_index))
+        print_tree_recursive(root_index, 0);
+    else
+        screen_print("No root directory found\n");
+
     screen_print("------------------------------\n");
 
     free_file_table();

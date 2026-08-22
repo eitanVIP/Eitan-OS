@@ -80,6 +80,7 @@ void kernel_main(void) {
     enable_nxe();
 
     screen_init(framebuffer_request.response->framebuffers[0]);
+
     gdt_init();
 
     pmm_init(&memmap_request, &hhdm_request);
@@ -95,23 +96,7 @@ void kernel_main(void) {
     screen_print("[kernel] Eitan OS Started...\n");
     screen_print("[kernel] Hello user!\n");
 
-    // filesystem_write_file("/file1.txt", "Le data", FILE, 8);
-    // filesystem_write_file("/file2.txt", "Le data", FILE, 8);
-    // filesystem_write_file("/file3.txt", "Le data", FILE, 8);
-    // filesystem_create_directory("/dir1");
-    // filesystem_write_file("/dir1/file1.txt", "Le data", FILE, 8);
-    // filesystem_write_file("/dir1/file2.txt", "Le data", FILE, 8);
-    // filesystem_write_file("/dir1/file3.txt", "Le data", FILE, 8);
-    // filesystem_create_directory("/dir1/dir2");
-    // filesystem_write_file("/dir1/dir2/file1.txt", "Le data", FILE, 8);
-    // filesystem_write_file("/dir1/dir2/file2.txt", "Le data", FILE, 8);
-    // filesystem_write_file("/dir1/dir2/file3.txt", "Le data", FILE, 8);
-
-    // bool_t success = filesystem_write_file("/", "a", ROOT_DIRECTORY, 2);
-    // screen_print(success ? "[ok]\n" : "[failed]\n");
-
-    filesystem_print_all_entries();
-    filesystem_print_tree();
+    filesystem_print_state(false);
 
     // uint8_t* data_ptr;
     // size_t data_size;

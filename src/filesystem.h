@@ -26,7 +26,6 @@ bool_t filesystem_delete_file(const char* path);
 bool_t filesystem_create_directory(const char* path);
 bool_t filesystem_move_file(const char* path, const char* new_path);
 char** filesystem_list_dir(const char* path, uint64_t* file_count);
-void filesystem_print_all_entries();
-void filesystem_print_tree();
+void filesystem_print_state(bool_t include_entries);
 
 #endif //FILESYSTEM_H

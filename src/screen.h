@@ -31,6 +31,8 @@ void screen_put_pixel(uint32_t x, uint32_t y, uint32_t color);
 uint32_t screen_make_color(uint8_t r, uint8_t g, uint8_t b);
 uint64_t screen_get_width();
 uint64_t screen_get_height();
+uint32_t screen_get_font_char_width();
+uint32_t screen_get_font_char_height();
 void screen_load_font(uint8_t* font);
 void screen_put_char(char c, uint32_t x, uint32_t y, uint32_t fg_color, uint32_t bg_color);
 void screen_norm_cursor();
