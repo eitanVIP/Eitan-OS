@@ -459,7 +459,10 @@ bool_t find_space_for_file(size_t file_size, uint32_t *file_start_sector_out) {
 
     for (int k = 0; k < n; k++) {
         file_entry_t *entry = &file_table[order[k]];
-        uint32_t gap = entry->start_sector - prev_end;
+        if (entry->size == 0)
+            continue;
+
+        uint32_t gap = (entry->start_sector > prev_end) ? entry->start_sector - prev_end : 0;
         if (gap >= sectors_needed) {
             *file_start_sector_out = prev_end;
             return true;

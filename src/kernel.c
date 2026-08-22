@@ -99,7 +99,7 @@ void kernel_main(void) {
     // filesystem_write_file("/file2.txt", "Le data", FILE, 8);
     // filesystem_write_file("/file3.txt", "Le data", FILE, 8);
     // filesystem_create_directory("/dir1");
-    filesystem_write_file("/dir1/file1.txt", "Le data", FILE, 8);
+    // filesystem_write_file("/dir1/file1.txt", "Le data", FILE, 8);
     // filesystem_write_file("/dir1/file2.txt", "Le data", FILE, 8);
     // filesystem_write_file("/dir1/file3.txt", "Le data", FILE, 8);
     // filesystem_create_directory("/dir1/dir2");
