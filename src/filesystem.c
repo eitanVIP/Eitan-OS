@@ -43,7 +43,6 @@
 #define FILE_TABLE_ENTRIES (ENTRIES_PER_SECTOR * FILE_TABLE_SECTORS)
 #define FILE_TABLE_SIZE (FILE_TABLE_SECTORS * SECTOR_SIZE)
 #define MAX_FILES FILE_TABLE_ENTRIES
-#define FILE_NAME_LENGTH 60
 
 typedef struct {
     uint32_t magic_number;
@@ -403,7 +402,7 @@ void split_path(const char* path, char** dir_path_out, char** name_out) {
     *name_out = name;
 }
 
-bool_t filesystem_read_file(const char* path, uint8_t** data_out, size_t* data_size_out, uint32_t* file_entry_idx_out) {
+bool_t filesystem_read_file(const char* path, uint8_t** data_out, size_t* data_size_out) {
     if (!is_valid_path(path))
         return false;
 
@@ -425,7 +424,6 @@ bool_t filesystem_read_file(const char* path, uint8_t** data_out, size_t* data_s
     read_sectors(file_entry.start_sector, data, file_entry.size);
     *data_out = data;
     *data_size_out = file_entry.size;
-    *file_entry_idx_out = file_index;
 
     free_file_table();
     return true;
@@ -586,8 +584,7 @@ bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t 
     // Check if file already exists
     uint8_t* _;
     size_t _2;
-    uint32_t current_file_entry_idx;
-    bool_t new_file = !filesystem_read_file(path, &_, &_2, &current_file_entry_idx);
+    bool_t new_file = !filesystem_read_file(path, &_, &_2);
     if (!new_file)
         free(_);
 
@@ -595,6 +592,17 @@ bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t 
 
     // If not new file, edit file
     if (!new_file) {
+        uint32_t current_file_entry_idx;
+        if (!resolve_path(path, &current_file_entry_idx)) {
+            free_file_table();
+            return false;
+        }
+
+        if (file_table[current_file_entry_idx].type != FILE) {
+            free_file_table();
+            return false;
+        }
+
         bool_t success = edit_file(current_file_entry_idx, data, size);
         free_file_table();
         return success;
@@ -751,25 +759,29 @@ fail:
     return false;
 }
 
-char** filesystem_list_dir(const char* path, uint64_t* file_count) {
+dir_listing_t* filesystem_list_dir(const char* path, uint64_t* file_count) {
     // Read dir file
     dir_entry_t* entries;
     size_t data_size;
-    uint32_t file_entry_idx;
-    if (!filesystem_read_file(path, (uint8_t**)&entries, &data_size, &file_entry_idx))
-        return false;
+    if (!filesystem_read_file(path, (uint8_t**)&entries, &data_size))
+        return null;
 
     // Allocate array
     size_t entries_count = data_size / sizeof(dir_entry_t);
-    char** names = malloc(entries_count * sizeof(char*));
+    dir_listing_t* listings = malloc(entries_count * sizeof(dir_listing_t));
 
-    // Fill array with allocated names
+    load_file_table();
+
+    // Fill array
     for (uint64_t i = 0; i < entries_count; i++) {
-        names[i] = strdup(entries[i].name);
+        listings[i] = (dir_listing_t){};
+        listings[i].type = file_table[entries[i].file_table_index].type;
+        memcpy(listings[i].name, entries[i].name, FILE_NAME_LENGTH);
+        listings[i].name[FILE_NAME_LENGTH - 1] = '\0';
     }
 
     *file_count = entries_count;
-    return names;
+    return listings;
 }
 
 void print_tree_recursive(uint32_t dir_index, int depth) {

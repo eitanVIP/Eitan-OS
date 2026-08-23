@@ -352,6 +352,8 @@ void irq_handler_c(uint32_t int_no, uint64_t* regs) {
 }
 
 void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t* current_regs) {
+    uint64_t success = true;
+
     switch (syscall_id) {
         case 0: // Exit
             vmm_set_PML4(process_scheduler_get_kernel_PML4());
@@ -360,21 +362,23 @@ void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64
             process_scheduler_exit(current_regs);
             break;
 
-        case 1: // Run program (arg1 pointer to name of file, arg2 pointer to put pid)
-            // vmm_set_PML4(process_scheduler_get_kernel_PML4());
-            // vmm_load_cpu();
-            //
-            // uint8_t* data1;
-            // uint32_t data_size1;
-            // uint32_t pid;
-            // if (filesystem_read_file((const char*)arg1, &data1, &data_size1)) {
-            //     program_loader_load_elf32(data1, &pid);
-            // }
-            //
-            // vmm_set_PML4(process_scheduler_get_current_PML4());
-            // vmm_load_cpu();
-            //
-            // *(uint32_t*)arg2 = pid;
+        case 1: // Run program (arg1 pointer to path of file, arg2 pointer to put pid)
+            vmm_set_PML4(process_scheduler_get_kernel_PML4());
+            vmm_load_cpu();
+
+            success = false;
+
+            uint8_t* data1;
+            size_t data_size1;
+            uint32_t pid;
+            if (filesystem_read_file((const char*)arg1, &data1, &data_size1)) {
+                success = program_loader_load_elf64(data1, &pid);
+            }
+
+            vmm_set_PML4(process_scheduler_get_current_PML4());
+            vmm_load_cpu();
+
+            *(uint32_t*)arg2 = pid;
             break;
 
         case 2: // Close process (arg1 pid)
@@ -410,32 +414,32 @@ void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64
 
 
 
-        case 40: // Read file (arg1 pointer to name of file, arg2 pointer to put pointer to heap data, arg3 size of data)
-            // uint8_t* data2;
-            // uint32_t data_size2;
-            // if (filesystem_read_file((const char*)arg1, &data2, &data_size2)) {
-            //     *(uint8_t**)arg2 = data2;
-            //     *(uint8_t*)arg3 = data_size2;
-            // }
+        case 40: // Read file (arg1 pointer to path of file, arg2 pointer to put pointer to heap data, arg3 size of data)
+            uint8_t* data2;
+            size_t data_size2;
+            if (filesystem_read_file((const char*)arg1, &data2, &data_size2)) {
+                *(uint8_t**)arg2 = data2;
+                *(uint8_t*)arg3 = data_size2;
+            } else {
+                success = false;
+            }
             break;
 
-        case 41: // Write file (arg1 pointer to name of file, arg2 pointer to data, arg3 size of data)
-            // filesystem_write_file((const char*)arg1, (const uint8_t*)arg2, arg3);
+        case 41: // Write file (arg1 pointer to path of file, arg2 pointer to data, arg3 size of data)
+            success = filesystem_write_file((const char*)arg1, (const uint8_t*)arg2, FILE, arg3);
             break;
 
-        case 42: // List files (arg1 pointer to name of path, arg2 pointer to put pointer to array of names, arg3 pointer to put array size)
-            // *(char***)arg2 = filesystem_list_files((char*)arg1, (int*)arg3);
+        case 42: // List files (arg1 pointer to path of dir, arg2 pointer to put pointer to array of listings, arg3 pointer to put array size)
+            *(dir_listing_t**)arg2 = filesystem_list_dir((const char*)arg1, (size_t*)arg3);
             break;
 
-        case 43: // List dirs (arg1 pointer to name of path, arg2 pointer to put pointer to array of names, arg3 pointer to put array size)
-            // *(char***)arg2 = filesystem_list_dirs((char*)arg1, (int*)arg3);
-            break;
-
-        case 44: // Delete file (arg1 pointer to name of file)
-            // filesystem_delete_file((const char*)arg1);
+        case 43: // Delete file (arg1 pointer to path of file)
+            success = filesystem_delete_file((const char*)arg1);
             break;
 
         default:
             break;
     }
+
+    current_regs[16] = success; //RAX = success
 }

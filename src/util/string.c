@@ -171,6 +171,22 @@ int strncmp(const char *s1, const char *s2, size_t n) {
     return true;
 }
 
+char* substr(const char* str, int start, int size) {
+    char* new_str = (char*)malloc(size + 1);
+
+    for (int i = 0; i < size; i++) {
+        new_str[i] = str[start + i];
+
+        if (str[start + i] == '\0') {
+            break;
+        }
+    }
+
+    new_str[size] = '\0';
+
+    return new_str;
+}
+
 char* strchr(const char *s, int c) {
     char target = (char)c;
 

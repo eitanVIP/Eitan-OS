@@ -1,3 +1,5 @@
+set -e
+
 if [[ -z "$1" ]]; then
   echo "Usage: ./compile.sh <program_name>"
   exit 1

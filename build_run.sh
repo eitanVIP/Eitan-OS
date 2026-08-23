@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 GREEN='\033[1;32m'
+RED='\033[1;31m'
 NC='\033[0m' # No Color
 log() { echo -e "${GREEN}[*] $1${NC}"; }
+trap 'echo -e "${RED}[!] Build failed (exit $?) at line $LINENO: $BASH_COMMAND${NC}"' ERR
 
 # Paths
 BUILD_DIR="build"
@@ -34,10 +36,14 @@ ld -m elf_x86_64 \
    $BUILD_DIR/kernel.o $(ls $BUILD_DIR/*.o | grep -v "kernel.o")
 
 # Create ISO folder for limine
-log "Downloading limine bootloader..."
-curl -L https://github.com/Limine-Bootloader/Limine/releases/latest/download/limine-binary.tar.gz | gunzip | tar -xf -
-mv limine-binary $BUILD_DIR/limine-binary
-make -C $BUILD_DIR/limine-binary
+if [ ! -d limine-binary ]; then
+    log "Downloading limine bootloader..."
+    curl -L https://github.com/Limine-Bootloader/Limine/releases/latest/download/limine-binary.tar.gz | gunzip | tar -xf -
+    make -C limine-binary
+else
+    log "limine-binary already exists, skipping download"
+fi
+cp -r limine-binary $BUILD_DIR/limine-binary
 
 mkdir -p $BUILD_DIR/iso/EFI/boot
 cp BOOTX64.EFI $BUILD_DIR/iso/EFI/boot/BOOTX64.EFI

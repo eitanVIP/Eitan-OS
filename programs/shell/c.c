@@ -15,16 +15,30 @@ typedef unsigned long long uint64_t;
 typedef uint64_t size_t;
 typedef uint8_t bool_t;
 
-void syscall(uint64_t num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
+#define FILE_NAME_LENGTH 60
+typedef enum {
+    FILE,
+    DIRECTORY,
+    ROOT_DIRECTORY,
+} file_type_t;
+typedef struct {
+    file_type_t type;
+    char name[FILE_NAME_LENGTH];
+} dir_listing_t;
+
+uint64_t syscall(uint64_t num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
+    uint64_t ret;
     asm volatile(
         "int $0x80"
-        : // No output operands
-        : "a"(num),
-          "b"(arg1),
-          "c"(arg2),
-          "d"(arg3)
+        : "=a"(ret)  // rax has return value
+        : "a"(num),  // rax is syscall num
+          "b"(arg1), // rbx is arg1
+          "c"(arg2), // rcx is arg2
+          "d"(arg3)  // rdx is arg3
         : "memory"
     );
+
+    return ret;
 }
 
 void print(char* str) {
@@ -49,9 +63,8 @@ void exit() {
     syscall(0, 0, 0, 0);
 }
 
-// Returns the PID of the new process via the pid_out pointer
-void run_program(char* filename, uint32_t* pid_out) {
-    syscall(1, (uint64_t)filename, (uint64_t)pid_out, 0);
+bool_t run_program(char* filename, uint32_t* pid_out) {
+    return syscall(1, (uint64_t)filename, (uint64_t)pid_out, 0);
 }
 
 void kill_process(uint32_t pid) {
@@ -88,30 +101,22 @@ bool_t is_character(uint16_t scancode) {
            (ascii == '\n');
 }
 
-// Reads file into a new heap buffer.
-// Usage: char* buffer; uint32_t size; read_file("test.txt", &buffer, &size);
-void read_file(char* filename, void** data_out, unsigned int* size_out) {
-    syscall(40, (unsigned int)filename, (unsigned int)data_out, (unsigned int)size_out);
+bool_t read_file(const char* path, void** data_out, size_t* size_out) {
+    return syscall(40, (uint64_t)path, (uint64_t)data_out, (uint64_t)size_out);
 }
 
-void write_file(char* filename, void* data, unsigned int size) {
-    syscall(41, (unsigned int)filename, (unsigned int)data, size);
+bool_t write_file(const char* path, void* data, size_t size) {
+    return syscall(41, (uint64_t)path, (uint64_t)data, size);
 }
 
-char** list_files(char* path, int* file_count) {
-    char** files;
-    syscall(42, (unsigned int)path, (unsigned int)&files, (unsigned int)file_count);
+dir_listing_t* list_dir(const char* path, size_t* file_count) {
+    dir_listing_t* files;
+    syscall(42, (uint64_t)path, (uint64_t)&files, (uint64_t)file_count);
     return files;
 }
 
-char** list_dirs(char* path, int* dir_count) {
-    char** dirs;
-    syscall(43, (unsigned int)path, (unsigned int)&dirs, (unsigned int)dir_count);
-    return dirs;
-}
-
-void delete_file(char* filename) {
-    syscall(44, (unsigned int)filename, 0, 0);
+bool_t delete_file(const char* path) {
+    return syscall(43, (uint64_t)path, 0, 0);
 }
 
 
@@ -165,6 +170,10 @@ double ceil(double num) {
     return frac != 0 ? flo + 1 : num;
 }
 
+uint64_t ceil_div(uint64_t a, uint64_t b) {
+    return (a + b - 1) / b;
+}
+
 double round(double num) {
     double flo = floor(num);
     double frac = num - flo;
@@ -178,16 +187,18 @@ int rand() {
     return rand_state;
 }
 
-void* memcpy(void* dest, const void* src, const unsigned long long size) {
+
+
+void* memcpy(void* dest, const void* src, const size_t size) {
     unsigned char* d = dest;
     const unsigned char* s = src;
-    for (unsigned long long i = 0; i < size; i++) {
+    for (size_t i = 0; i < size; i++) {
         d[i] = s[i];
     }
     return dest;
 }
 
-void* memset(void* dest, unsigned char val, unsigned long long size) {
+void* memset(void* dest, uint8_t val, size_t size) {
     unsigned char *d = dest;
     while (size--) {
         *d++ = val;
@@ -206,83 +217,122 @@ int strlen(const char* str) {
 }
 
 char* num_to_str(double num) {
+     if (num == 0) {
+         char* result = (char*)malloc(2);
+         result[0] = '0';
+         result[1] = '\0';
+         return result;
+     }
+
+     int is_negative = num < 0;
+     if (is_negative)
+         num = -num;
+
+     int fraction_digit_count = 0;
+     double no_frac_num = abs(num);
+     while ((long)no_frac_num != no_frac_num && fraction_digit_count < 6) {
+         fraction_digit_count++;
+         no_frac_num *= 10;
+     }
+
+     long int_num = (long)no_frac_num;
+
+     int digit_count = 0;
+     long tmp = int_num;
+     do {
+         digit_count++;
+         tmp /= 10;
+     } while (tmp > 0);
+
+     //        digits,       '.'                          '0.'                                    '-'       '\0'
+     int len = digit_count + (fraction_digit_count > 0) + (fraction_digit_count == digit_count) + is_negative + 1;
+     char* result = malloc(len);
+
+     result[len - 1] = '\0';
+     if (is_negative)
+         result[0] = '-';
+
+     int i = -(is_negative) - (fraction_digit_count > 0) - (fraction_digit_count == digit_count);
+     while (int_num != 0) {
+         result[digit_count - i - 1] = (char)(int_num % 10 + '0');
+         if (i + is_negative + (fraction_digit_count > 0) + (fraction_digit_count == digit_count) + 1 == fraction_digit_count) {
+             i++;
+             result[digit_count - i - 1] = '.';
+
+             if (int_num / 10 == 0)
+                 result[is_negative] = '0';
+
+         }
+         int_num /= 10;
+         i++;
+     }
+
+     return result;
+}
+
+char* num_to_str_no_malloc(uint64_t num, char *buffer, size_t buffer_size) {
+    // Handle the edge case of an empty or too-small buffer
+    if (buffer == null || buffer_size < 2) return null;
+
+    // Start filling from the end of the buffer (leaving room for '\0')
+    char *ptr = &buffer[buffer_size - 1];
+    *ptr = '\0';
+
+    int is_negative = 0;
+
+    // Handle 0 explicitly
     if (num == 0) {
-        char* result = (char*)malloc(2);
-        result[0] = '0';
-        result[1] = '\0';
-        return result;
+        *(--ptr) = '0';
+        return ptr;
     }
 
-    int is_negative = num < 0;
-    if (is_negative)
-        num = -num;
-
-    int fraction_digit_count = 0;
-    double no_frac_num = abs(num);
-    while ((long)no_frac_num != no_frac_num && fraction_digit_count < 6) {
-        fraction_digit_count++;
-        no_frac_num *= 10;
+    // Handle negative numbers
+    // Note: Using unsigned or long long avoids overflow issues with INT_MIN
+    uint64_t n = num;
+    if (n < 0) {
+        is_negative = 1;
+        n = -n;
     }
 
-    long int_num = (long)no_frac_num;
-
-    int digit_count = 0;
-    long tmp = int_num;
-    do {
-        digit_count++;
-        tmp /= 10;
-    } while (tmp > 0);
-
-    //        digits,       '.'                          '0.'                                    '-'       '\0'
-    int len = digit_count + (fraction_digit_count > 0) + (fraction_digit_count == digit_count) + is_negative + 1;
-    char* result = malloc(len);
-
-    result[len - 1] = '\0';
-    if (is_negative)
-        result[0] = '-';
-
-    int i = -(is_negative) - (fraction_digit_count > 0) - (fraction_digit_count == digit_count);
-    while (int_num != 0) {
-        result[digit_count - i - 1] = (char)(int_num % 10 + '0');
-        if (i + is_negative + (fraction_digit_count > 0) + (fraction_digit_count == digit_count) + 1 == fraction_digit_count) {
-            i++;
-            result[digit_count - i - 1] = '.';
-
-            if (int_num / 10 == 0)
-                result[is_negative] = '0';
-
-        }
-        int_num /= 10;
-        i++;
+    // Extract digits backwards
+    while (n > 0 && ptr > buffer) {
+        *(--ptr) = (n % 10) + '0';
+        n /= 10;
     }
 
-    return result;
+    // Add negative sign if applicable and if space permits
+    if (is_negative && ptr > buffer) {
+        *(--ptr) = '-';
+    }
+
+    return ptr;
 }
 
 char* str_concat(const char* s1, const char* s2) {
-    int len1 = strlen(s1);
-    int len2 = strlen(s2);
+     int len1 = strlen(s1);
+     int len2 = strlen(s2);
 
-    // Allocate space for both strings + null terminator
-    char* result = malloc(len1 + len2 + 1);
+     // Allocate space for both strings + null terminator
+     char* result = malloc(len1 + len2 + 1);
+     if (!result) return null; // handle malloc failure
 
-    // Copy first string
-    for (int i = 0; i < len1; i++)
-        result[i] = s1[i];
+     // Copy first string
+     for (int i = 0; i < len1; i++)
+         result[i] = s1[i];
 
-    // Copy second string
-    for (int i = 0; i < len2; i++)
-        result[len1 + i] = s2[i];
+     // Copy second string
+     for (int i = 0; i < len2; i++)
+         result[len1 + i] = s2[i];
 
-    // Null terminate
-    result[len1 + len2] = '\0';
+     // Null terminate
+     result[len1 + len2] = '\0';
 
-    return result;
+     return result;
 }
 
 char* strdup(const char* str) {
-    char* result = malloc(strlen(str) + 1);
-    return memcpy(result, str, strlen(str) + 1);
+     char* result = malloc(strlen(str) + 1);
+     return memcpy(result, str, strlen(str) + 1);
 }
 
 char* str_concats(const char** strings, int count) {
@@ -309,18 +359,16 @@ unsigned char strcmp(const char* s1, const char* s2) {
     return 1;
 }
 
-unsigned char strncmp(const char* s1, const char* s2, int max_size) {
-    int len = strlen(s1);
-    len = len > max_size ? max_size : len;
-    if (len > strlen(s2))
-        return 0;
-
-    for (int i = 0; i < len; i++) {
-        if (s1[i] != s2[i])
-            return 0;
+int strncmp(const char *s1, const char *s2, size_t n) {
+    while (n > 0) {
+        if (*s1 != *s2 || *s1 == '\0') {
+            return false;
+        }
+        s1++;
+        s2++;
+        n--;
     }
-
-    return 1;
+    return true;
 }
 
 char* substr(const char* str, int start, int size) {
@@ -337,6 +385,65 @@ char* substr(const char* str, int start, int size) {
     new_str[size] = '\0';
 
     return new_str;
+}
+
+char* strchr(const char *s, int c) {
+    char target = (char)c;
+
+    while (*s != '\0') {
+        if (*s == target) {
+            return (char *)s;
+        }
+        s++;
+    }
+
+    if (target == '\0') {
+        return (char *)s;
+    }
+
+    return null;
+}
+
+char* strrchr(const char *s, char c) {
+    char* last = null;
+    while (*s) {
+        if (*s == c) last = (char *)s;
+        s++;
+    }
+    return last;
+}
+
+char** str_split(const char* str, char delim, int* out_count) {
+    int count = 0;
+    const char *p = str;
+
+    while (*p) {
+        while (*p == delim) p++;
+        if (!*p) break;
+        while (*p && *p != delim) p++;
+        count++;
+    }
+
+    char **tokens = malloc(count * sizeof(char *));
+    p = str;
+    int i = 0;
+
+    while (*p) {
+        while (*p == delim) p++;
+        if (!*p) break;
+
+        const char *start = p;
+        while (*p && *p != delim) p++;
+        size_t len = p - start;
+
+        tokens[i] = malloc(len + 1);
+        memcpy(tokens[i], start, len);
+        tokens[i][len] = '\0';
+        i++;
+    }
+
+    *out_count = count;
+    return tokens;
 }
 
 
@@ -358,84 +465,64 @@ enum command {
 char working_dir[128] = "/";
 int working_dir_len = 1;
 
-char* join_working_dir(char* path, char add_slash) {
-    int path_len = strlen(path);
-
-    char* full_path;
-    if (!add_slash) {
-        full_path = malloc(path_len + working_dir_len + 1);
-        memcpy(full_path, working_dir, working_dir_len);
-        memcpy(full_path + working_dir_len, path, path_len);
-        full_path[path_len + working_dir_len] = '\0';
-    } else {
-        full_path = malloc(path_len + working_dir_len + 2);
-        memcpy(full_path, working_dir, working_dir_len);
-        memcpy(full_path + working_dir_len, path, path_len);
-        full_path[path_len + working_dir_len] = '/';
-        full_path[path_len + working_dir_len + 1] = '\0';
-    }
-
-    return full_path;
+char* join_working_dir(char* path) {
+    char* strs[] = { working_dir, "/", path };
+    return str_concats(strs, sizeof(strs) / sizeof(strs[0]));
 }
 
 void parse_path(char* path) {
     int len = strlen(path);
     if (len <= 1) return; // Already "/" or empty
 
-    // stack will store the start/end indices of directory names
-    // For a path like /a/b/c/, parts are "a", "b", "c"
     char* stack[64];
     int top = 0;
-
     int i = 0;
+
     while (path[i] != '\0') {
         // Skip slashes to find the start of a folder name
         while (path[i] == '/') i++;
         if (path[i] == '\0') break;
 
         int start = i;
-        // Find the end of the folder name
         while (path[i] != '/' && path[i] != '\0') i++;
 
-        // Extract the folder name
         int part_len = i - start;
         char* part = substr(path, start, part_len);
 
         if (strcmp(part, "..")) {
-            // "Pop" from stack if we can
+            // Pop from stack if we can
             if (top > 0) {
                 top--;
                 free(stack[top]);
             }
-            free(part); // Free the ".." string
+            free(part);
         } else if (strcmp(part, ".")) {
             // Ignore current directory
             free(part);
         } else {
-            // "Push" folder to stack
-            stack[top++] = part;
+            // Push folder to stack (guard against overflow)
+            if (top < 64) {
+                stack[top++] = part;
+            } else {
+                free(part);
+            }
         }
     }
 
     // Reconstruct the string
-    // Start with the leading slash
     memset(path, 0, len);
     path[0] = '/';
     path[1] = '\0';
 
     for (int j = 0; j < top; j++) {
         char* temp = str_concat(path, stack[j]);
+        char* temp2 = (j < top - 1) ? str_concat(temp, "/") : temp;
 
-        // str_concat returns new memory, so we copy it back to our buffer
-        // and ensure the trailing slash is added
-        char* temp2 = str_concat(temp, "/");
-
-        // Safety: assuming 'path' buffer is large enough
         memcpy(path, temp2, strlen(temp2) + 1);
 
         free(temp);
-        free(temp2);
-        free(stack[j]); // Clean up the heap-allocated parts from substr
+        if (temp2 != temp) free(temp2);
+        free(stack[j]);
     }
 }
 
@@ -444,33 +531,21 @@ void cmd_ls(char** args, int args_size) {
         print("Usage: ls\n");
         return;
     }
-    int file_count;
-    char** files = list_files(working_dir, &file_count);
-    for (int i = 0; i < file_count; i++) {
-        int name_len = strlen(files[i]);
-        char* msg = malloc(name_len + 2);
-        memcpy(msg, files[i], name_len);
-        msg[name_len] = '\n';
-        msg[name_len + 1] = '\0';
-        print(msg);
-        free(msg);
-        free(files[i]);
-    }
-    free(files);
 
-    int dir_count;
-    char** dirs = list_dirs(working_dir, &dir_count);
-    for (int i = 0; i < dir_count; i++) {
-        int name_len = strlen(dirs[i]);
-        char* msg = malloc(name_len + 2);
-        memcpy(msg, dirs[i], name_len);
-        msg[name_len] = '\n';
-        msg[name_len + 1] = '\0';
+    size_t file_count;
+    dir_listing_t* files = list_dir(working_dir, &file_count);
+    if (files == null) {
+        print("No files found\n");
+        return;
+    }
+
+    for (size_t i = 0; i < file_count; i++) {
+        char* msg = str_concat(files[i].name, "\n");
         print(msg);
         free(msg);
-        free(dirs[i]);
     }
-    free(dirs);
+
+    free(files);
 }
 
 void cmd_echo(char** args, int args_size) {
@@ -492,11 +567,14 @@ void cmd_cd(char** args, int args_size) {
         print("Usage: cd <path>\n");
         return;
     }
-    char* cd_name = join_working_dir(args[0], 1);
-    parse_path(cd_name);
-    memcpy(working_dir, cd_name, strlen(cd_name) + 1);
+
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
+    memcpy(working_dir, path, strlen(path) + 1);
     working_dir_len = strlen(working_dir);
-    free(cd_name);
+
+    free(path);
 }
 
 void cmd_touch(char** args, int args_size) {
@@ -504,12 +582,14 @@ void cmd_touch(char** args, int args_size) {
         print("Usage: touch <filename>\n");
         return;
     }
-    char* touch_name = join_working_dir(args[0], 0);
-    write_file(touch_name, "", 1);
-    print("Created: ");
-    print(touch_name);
-    print("\n");
-    free(touch_name);
+
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
+    write_file(path, "", 1);
+    print("Created: "); print(path); print("\n");
+
+    free(path);
 }
 
 void cmd_cat(char** args, int args_size) {
@@ -517,14 +597,20 @@ void cmd_cat(char** args, int args_size) {
         print("Usage: cat <filename>\n");
         return;
     }
-    char* cat_name = join_working_dir(args[0], 0);
+
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
     char* data;
-    int data_size;
-    read_file(cat_name, &data, &data_size);
-    print(data);
-    print("\n");
-    free(data);
-    free(cat_name);
+    size_t data_size;
+    if (read_file(path, &data, &data_size)) {
+        print(data);
+        print("\n");
+        free(data);
+    } else {
+        print("Error: File doesn't exist\n");
+    }
+    free(path);
 }
 
 void cmd_write(char** args, int args_size) {
@@ -532,17 +618,20 @@ void cmd_write(char** args, int args_size) {
         print("Usage: write <filename> <data>\n");
         return;
     }
-    char* write_name = join_working_dir(args[0], 0);
+
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
     char* file_data = 0;
-    int file_data_size;
-    read_file(write_name, &file_data, &file_data_size);
-    if (file_data != 0) {
-        write_file(write_name, args[1], strlen(args[1]) + 1);
+    size_t file_data_size;
+    bool_t file_exists = read_file(path, &file_data, &file_data_size);
+    if (file_exists) {
+        write_file(path, args[1], strlen(args[1]) + 1);
         free(file_data);
     } else {
         print("Error: File doesn't exist\n");
     }
-    free(write_name);
+    free(path);
 }
 
 void cmd_rm(char** args, int args_size) {
@@ -550,12 +639,18 @@ void cmd_rm(char** args, int args_size) {
         print("Usage: rm <filename>\n");
         return;
     }
-    char* rm_name = join_working_dir(args[0], 0);
-    delete_file(rm_name);
-    print("Deleted: ");
-    print(rm_name);
-    print("\n");
-    free(rm_name);
+
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
+    if (delete_file(path)) {
+        print("Deleted: ");
+        print(path);
+        print("\n");
+    } else {
+        print("Error: File doesn't exist\n");
+    }
+    free(path);
 }
 
 void cmd_man(char** args, int args_size) {
@@ -574,42 +669,45 @@ void cmd_man(char** args, int args_size) {
         else if (strcmp(args[0], "write")) print("write - overwrites a file with provided text\nUsage: write <filename> <data>\n");
         else if (strcmp(args[0], "rm")) print("rm - removes a file from the system\nUsage: rm <filename>\n");
         else if (strcmp(args[0], "man")) print("man - displays manual pages for commands\nUsage: man or man <command>\n");
-        else if (strcmp(args[0], "find")) print("find - prints all nested files and folders in working dir\nUsage: find\n");
+        else if (strcmp(args[0], "find")) print("find - prints all nested files and folders in working dir\nUsage: find or find <path>\n");
         else print("Error: Command not found in manual.\n");
     }
 }
 
-void recursive_find(char* path, int recursion_level) {
-    int file_count;
-    char** files = list_files(path, &file_count);
+void recursive_find(const char* path, int recursion_level) {
+    size_t file_count;
+    dir_listing_t* files = list_dir(path, &file_count);
+    if (files == null)
+        return;
+
     for (int i = 0; i < file_count; i++) {
-        for (int j = 0; j < recursion_level; j++)
+        for (int j = 0; j < recursion_level; j++) // Print tabs to indent files in dirs
             print("   ");
 
-        print(files[i]); print("\n");
-        free(files[i]);
+        print(files[i].name); print("\n"); // Print file name
+
+        if (files[i].type == DIRECTORY) { // If the file is a dir, continue recursively
+            char* strs[] = { path, "/", files[i].name };
+            char* child_path = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
+
+            recursive_find(child_path, recursion_level + 1);
+            free(child_path);
+        }
     }
+
     free(files);
-
-    int dir_count;
-    char** dirs = list_dirs(path, &dir_count);
-    for (int i = 0; i < dir_count; i++) {
-        for (int j = 0; j < recursion_level; j++)
-            print("   ");
-
-        print(dirs[i]); print("\n");
-        recursive_find(dirs[i], recursion_level + 1);
-        free(dirs[i]);
-    }
-    free(dirs);
 }
 
 void cmd_find(char** args, int args_size) {
-    if (args_size != 0) {
-        print("Usage: find\n");
-        return;
+    if (args_size == 0) {
+        recursive_find(working_dir, 0);
     }
-    recursive_find(working_dir, 0);
+    else if (args_size == 1) {
+        recursive_find(args[0], 0);
+    }
+    else {
+        print("Usage: find or find <path> \n");
+    }
 }
 
 void execute_command_line(enum command command, char** args, int args_size) {
@@ -660,14 +758,14 @@ void execute_command_line(enum command command, char** args, int args_size) {
     }
 }
 
-char parse_command_line(const char* command_line, enum command* command_out, char*** args_out, int* args_size_out) {
+bool_t parse_command_line(const char* command_line, enum command* command_out, char*** args_out, int* args_size_out) {
     if (command_line[0] == '\0')
-        return 0;
+        return false;
 
     int command_size = 0;
     while (command_line[command_size] != ' ' && command_line[command_size] != '\0') {
         if (command_size > 127)
-            return 0;
+            return false;
 
         command_size++;
     }
@@ -731,7 +829,7 @@ char parse_command_line(const char* command_line, enum command* command_out, cha
 
     *args_out = args;
     *args_size_out = args_size;
-    return 1;
+    return true;
 }
 
 char* read_command_line() {
@@ -766,14 +864,8 @@ char* read_command_line() {
 }
 
 void main(void) {
-    while (1) {
-        int working_dir_len = strlen(working_dir);
-        char* line_prefix = malloc(working_dir_len + 4);
-        memcpy(line_prefix, working_dir, working_dir_len);
-        line_prefix[working_dir_len] = ' ';
-        line_prefix[working_dir_len + 1] = '>';
-        line_prefix[working_dir_len + 2] = ' ';
-        line_prefix[working_dir_len + 3] = '\0';
+    while (true) {
+        char* line_prefix = str_concat(working_dir, "> ");
         print(line_prefix);
         free(line_prefix);
 
@@ -782,7 +874,7 @@ void main(void) {
         enum command command;
         char** args;
         int args_size;
-        char parse_success = parse_command_line(command_line, &command, &args, &args_size);
+        bool_t parse_success = parse_command_line(command_line, &command, &args, &args_size);
         free(command_line);
 
         if (parse_success) {
