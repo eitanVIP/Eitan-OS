@@ -402,7 +402,7 @@ void split_path(const char* path, char** dir_path_out, char** name_out) {
     *name_out = name;
 }
 
-bool_t filesystem_read_file(const char* path, uint8_t** data_out, size_t* data_size_out) {
+bool_t filesystem_read_file(const char* path, void* data_out) {
     if (!is_valid_path(path))
         return false;
 
@@ -420,10 +420,60 @@ bool_t filesystem_read_file(const char* path, uint8_t** data_out, size_t* data_s
         return false;
     }
 
-    uint8_t* data = malloc(file_entry.size);
-    read_sectors(file_entry.start_sector, data, file_entry.size);
-    *data_out = data;
-    *data_size_out = file_entry.size;
+    read_sectors(file_entry.start_sector, data_out, file_entry.size);
+
+    free_file_table();
+    return true;
+}
+
+bool_t filesystem_read_file_metadata(const char* path, file_metadata_t* metadata_out) {
+    if (!is_valid_path(path))
+        return false;
+
+    load_file_table();
+
+    uint32_t file_index;
+    if (!resolve_path(path, &file_index)) {
+        free_file_table();
+        return false;
+    }
+
+    file_entry_t file_entry = file_table[file_index];
+    if (file_entry.magic_number != MAGIC_NUMBER) {
+        free_file_table();
+        return false;
+    }
+
+    char* dir_path;
+    char* name;
+    split_path(path, &dir_path, &name);
+
+    metadata_out->size = file_entry.size;
+    metadata_out->type = file_entry.type;
+    memcpy(metadata_out->name, name, min(strlen(name) + 1, FILE_NAME_LENGTH));
+    metadata_out->name[FILE_NAME_LENGTH - 1] = '\0';
+
+    free_file_table();
+    return true;
+}
+
+bool_t filesystem_file_exists(const char* path) {
+    if (!is_valid_path(path))
+        return false;
+
+    load_file_table();
+
+    uint32_t file_index;
+    if (!resolve_path(path, &file_index)) {
+        free_file_table();
+        return false;
+    }
+
+    file_entry_t file_entry = file_table[file_index];
+    if (file_entry.magic_number != MAGIC_NUMBER) {
+        free_file_table();
+        return false;
+    }
 
     free_file_table();
     return true;
@@ -582,11 +632,7 @@ bool_t filesystem_write_file(const char* path, const uint8_t* data, file_type_t 
         return false;
 
     // Check if file already exists
-    uint8_t* _;
-    size_t _2;
-    bool_t new_file = !filesystem_read_file(path, &_, &_2);
-    if (!new_file)
-        free(_);
+    bool_t new_file = !filesystem_file_exists(path);
 
     load_file_table();
 
@@ -709,6 +755,84 @@ bool_t filesystem_create_directory(const char* path) {
     return filesystem_write_file(path, &data, DIRECTORY, 0);
 }
 
+void delete_directory_entries_recursive(uint32_t dir_idx) {
+    file_entry_t dir_entry = file_table[dir_idx];
+    if (dir_entry.size == 0)
+        return;
+
+    dir_entry_t* entries = malloc(dir_entry.size);
+    read_sectors(dir_entry.start_sector, entries, dir_entry.size);
+    uint32_t count = dir_entry.size / sizeof(dir_entry_t);
+
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t idx = entries[i].file_table_index;
+
+        if (file_table[idx].magic_number != MAGIC_NUMBER)
+            continue;
+
+        if (file_table[idx].type == DIRECTORY)
+            delete_directory_entries_recursive(idx);
+
+        // Free the file table slot for this file/subdir.
+        // No need to update its parent's dir listing on disk since that dir is being wiped too.
+        file_table[idx].magic_number = null;
+    }
+
+    free(entries);
+}
+
+bool_t filesystem_delete_directory(const char* path) {
+    if (!is_valid_path(path))
+        return false;
+
+    load_file_table();
+
+    // Find directory's own file entry
+    uint32_t dir_file_entry_idx;
+    if (!resolve_path(path, &dir_file_entry_idx)) {
+        free_file_table();
+        return false;
+    }
+
+    if (file_table[dir_file_entry_idx].type != DIRECTORY) {
+        free_file_table();
+        return false;
+    }
+
+    // Recursively wipe out all files/subdirs inside
+    delete_directory_entries_recursive(dir_file_entry_idx);
+
+    // Find parent dir
+    char* dir_path;
+    char* name;
+    split_path(path, &dir_path, &name);
+
+    uint32_t parent_dir_idx;
+    if (!resolve_path(dir_path, &parent_dir_idx)) {
+        free(dir_path);
+        free(name);
+        free_file_table();
+        return false;
+    }
+
+    // Remove this directory's own entry from its parent's listing
+    if (!remove_file_from_dir(parent_dir_idx, dir_file_entry_idx)) {
+        free(dir_path);
+        free(name);
+        free_file_table();
+        return false;
+    }
+
+    // Free the directory's own file table slot
+    file_table[dir_file_entry_idx].magic_number = null;
+    write_sectors(1, file_table, FILE_TABLE_SIZE);
+
+    free(dir_path);
+    free(name);
+    free_file_table();
+    return true;
+}
+
 bool_t filesystem_move_file(const char* path, const char* new_path) {
     if (!is_valid_path(path) || !is_valid_path(new_path))
         return false;
@@ -759,26 +883,43 @@ fail:
     return false;
 }
 
-dir_listing_t* filesystem_list_dir(const char* path, uint64_t* file_count) {
-    // Read dir file
-    dir_entry_t* entries;
-    size_t data_size;
-    if (!filesystem_read_file(path, (uint8_t**)&entries, &data_size))
+file_metadata_t* filesystem_list_dir(const char* path, uint64_t* file_count) {
+    if (!is_valid_path(path))
         return null;
 
+    if (!filesystem_file_exists(path))
+        return null;
+
+    // Read dir file
+    file_metadata_t metadata;
+    if (!filesystem_read_file_metadata(path, &metadata))
+        return null;
+
+    if (metadata.size < sizeof(dir_entry_t))
+        return null;
+
+    dir_entry_t* entries = malloc(metadata.size);
+    if (!filesystem_read_file(path, entries)) {
+        free(entries);
+        return null;
+    }
+
     // Allocate array
-    size_t entries_count = data_size / sizeof(dir_entry_t);
-    dir_listing_t* listings = malloc(entries_count * sizeof(dir_listing_t));
+    size_t entries_count = metadata.size / sizeof(dir_entry_t);
+    file_metadata_t* listings = malloc(entries_count * sizeof(file_metadata_t));
 
     load_file_table();
 
     // Fill array
     for (uint64_t i = 0; i < entries_count; i++) {
-        listings[i] = (dir_listing_t){};
+        listings[i] = (file_metadata_t){};
+        listings[i].size = file_table[entries[i].file_table_index].size;
         listings[i].type = file_table[entries[i].file_table_index].type;
         memcpy(listings[i].name, entries[i].name, FILE_NAME_LENGTH);
         listings[i].name[FILE_NAME_LENGTH - 1] = '\0';
     }
+
+    free_file_table();
 
     *file_count = entries_count;
     return listings;

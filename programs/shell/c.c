@@ -689,6 +689,7 @@ void recursive_find(const char* path, int recursion_level) {
         if (files[i].type == DIRECTORY) { // If the file is a dir, continue recursively
             char* strs[] = { path, "/", files[i].name };
             char* child_path = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
+            parse_path(child_path);
 
             recursive_find(child_path, recursion_level + 1);
             free(child_path);
@@ -703,7 +704,9 @@ void cmd_find(char** args, int args_size) {
         recursive_find(working_dir, 0);
     }
     else if (args_size == 1) {
-        recursive_find(args[0], 0);
+        char* path = join_working_dir(args[0]);
+        parse_path(path);
+        recursive_find(path, 0);
     }
     else {
         print("Usage: find or find <path> \n");

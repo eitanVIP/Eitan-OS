@@ -363,22 +363,32 @@ void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64
             break;
 
         case 1: // Run program (arg1 pointer to path of file, arg2 pointer to put pid)
+            // Path string is stored in user memory space. This code copies the path string to kernel heap.
+            size_t path_len = strlen((char*)arg1);
+            char* path = malloc_kernel(path_len + 1);
+            memcpy(path, (char*)arg1, path_len);
+            path[path_len] = '\0';
+
             vmm_set_PML4(process_scheduler_get_kernel_PML4());
             vmm_load_cpu();
 
-            success = false;
+            file_metadata_t metadata;
+            success = filesystem_read_file_metadata(path, &metadata);
 
-            uint8_t* data1;
-            size_t data_size1;
             uint32_t pid;
-            if (filesystem_read_file((const char*)arg1, &data1, &data_size1)) {
-                success = program_loader_load_elf64(data1, &pid);
+            if (success) {
+                uint8_t* data1 = malloc(metadata.size);
+                if (filesystem_read_file(path, data1)) {
+                    success = program_loader_load_elf64(data1, &pid);
+                    free(data1);
+                }
             }
 
             vmm_set_PML4(process_scheduler_get_current_PML4());
             vmm_load_cpu();
 
-            *(uint32_t*)arg2 = pid;
+            if (success)
+                *(uint32_t*)arg2 = pid;
             break;
 
         case 2: // Close process (arg1 pid)
@@ -414,27 +424,40 @@ void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64
 
 
 
-        case 40: // Read file (arg1 pointer to path of file, arg2 pointer to put pointer to heap data, arg3 size of data)
-            uint8_t* data2;
-            size_t data_size2;
-            if (filesystem_read_file((const char*)arg1, &data2, &data_size2)) {
-                *(uint8_t**)arg2 = data2;
-                *(uint8_t*)arg3 = data_size2;
-            } else {
-                success = false;
-            }
+        case 40: // Read file (arg1 pointer to path of file, arg2 pointer to put data)
+            success = filesystem_read_file((const char*)arg1, (void*)arg2);
             break;
 
-        case 41: // Write file (arg1 pointer to path of file, arg2 pointer to data, arg3 size of data)
+        case 41: // Read file (arg1 pointer to path of file, arg2 pointer to put metadata)
+            success = filesystem_read_file_metadata((const char*)arg1, (file_metadata_t*)arg2);
+            break;
+
+        case 42: // Check file exists (arg1 pointer to path of file, arg2 pointer to put bool whether file exists)
+            *(bool_t*)arg2 = filesystem_file_exists((const char*)arg1);
+            break;
+
+        case 43: // Write file (arg1 pointer to path of file, arg2 pointer to data, arg3 size of data)
             success = filesystem_write_file((const char*)arg1, (const uint8_t*)arg2, FILE, arg3);
             break;
 
-        case 42: // List files (arg1 pointer to path of dir, arg2 pointer to put pointer to array of listings, arg3 pointer to put array size)
-            *(dir_listing_t**)arg2 = filesystem_list_dir((const char*)arg1, (size_t*)arg3);
+        case 44: // Delete file (arg1 pointer to path of file)
+            success = filesystem_delete_file((const char*)arg1);
             break;
 
-        case 43: // Delete file (arg1 pointer to path of file)
-            success = filesystem_delete_file((const char*)arg1);
+        case 45: // Create directory (arg1 pointer to path of dir)
+            success = filesystem_create_directory((const char*)arg1);
+            break;
+
+        case 46: // Delete directory (arg1 pointer to path of dir)
+            success = filesystem_delete_directory((const char*)arg1);
+            break;
+
+        case 47: // Move file (arg1 pointer to path of file, arg2 pointer to new path of file)
+            success = filesystem_move_file((const char*)arg1, (const char*)arg2);
+            break;
+
+        case 48: // List files (arg1 pointer to path of dir, arg2 pointer to put pointer to array of listings, arg3 pointer to put array size)
+            *(file_metadata_t**)arg2 = filesystem_list_dir((const char*)arg1, (size_t*)arg3);
             break;
 
         default:
