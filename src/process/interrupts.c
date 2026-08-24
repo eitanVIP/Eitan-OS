@@ -384,6 +384,8 @@ void syscall_handler_c(uint64_t syscall_id, uint64_t arg1, uint64_t arg2, uint64
                 }
             }
 
+            free_kernel(path);
+
             vmm_set_PML4(process_scheduler_get_current_PML4());
             vmm_load_cpu();
 

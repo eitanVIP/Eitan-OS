@@ -7,6 +7,7 @@
 #include "pmm.h"
 #include "../screen.h"
 #include "vmm.h"
+#include "../util/panic.h"
 #include "../util/string.h"
 #include "../util/util.h"
 
@@ -19,50 +20,86 @@ typedef struct block {
 } block_t;
 
 typedef struct {
-    block_t** free_list_ptr;
     block_t* free_list;
     bool_t is_kernel;
+    size_t heap_size;
 } allocator_data;
 
-static allocator_data* data;
-static block_t** kernel_free_list_ptr;
+static allocator_data* data = (allocator_data*)(HEAP_START - PAGE_SIZE);
+static allocator_data* kernel_data = (allocator_data*)(HEAP_START_KERNEL - PAGE_SIZE);
 
-bool_t allocator_heap_init(uint64_t heap_start, uint64_t heap_size, bool_t is_kernel) {
-    data = (allocator_data*)(HEAP_START - PAGE_SIZE);
-    bool_t success = vmm_alloc((uint64_t)data, (uint64_t)data, VMM_FLAGS_KERNEL_RW);
+static bool_t kernel_heap_initialized = false;
+
+bool_t allocator_heap_init(uint64_t heap_size, bool_t is_kernel) {
+    if (!kernel_heap_initialized && !is_kernel)
+        panic("Tried to init a non kernel heap before kernel heap initialized");
+    if (kernel_heap_initialized && is_kernel)
+        panic("Tried to re-init kernel heap");
+
+    bool_t success = vmm_alloc((uint64_t)data, (uint64_t)data + PAGE_SIZE - 1, VMM_FLAGS_KERNEL_RW);
     if (!success) {
         screen_print("[allocator] failed to map allocator data page\n");
         return false;
     }
     screen_print("[allocator] mapped allocator data page\n");
 
-    uint64_t end = heap_start + heap_size - 1;
-    success = vmm_alloc(heap_start, end, is_kernel ? VMM_FLAGS_KERNEL_RW : VMM_FLAGS_USER_RW);
+    if (is_kernel) {
+        success = vmm_alloc((uint64_t)kernel_data, (uint64_t)kernel_data + PAGE_SIZE - 1, VMM_FLAGS_KERNEL_RW);
+        if (!success) {
+            screen_print("[allocator] failed to map kernel allocator data page\n");
+            return false;
+        }
+        screen_print("[allocator] mapped kernel allocator data page\n");
+    }
+
+    uint64_t start = is_kernel ? HEAP_START_KERNEL : HEAP_START;
+    uint64_t end = start + heap_size - 1;
+    success = vmm_alloc(start, end, is_kernel ? VMM_FLAGS_KERNEL_RW : VMM_FLAGS_USER_RW);
     if (!success) {
-        vmm_unmap_page(heap_start - PAGE_SIZE);
+        // Unmap allocator data pages
+        vmm_unmap_page((uint64_t)data);
+        if (is_kernel) {
+            vmm_unmap_page((uint64_t)kernel_data);
+        }
         screen_print("[allocator] failed to map heap pages\n");
         return false;
     }
 
     screen_print("[allocator] mapped heap pages\n");
 
-    data->free_list = (block_t*)heap_start;
-    data->free_list_ptr = &data->free_list;
-    data->is_kernel = is_kernel;
-    if (is_kernel)
-        kernel_free_list_ptr = data->free_list_ptr;
+    if (is_kernel) {
+        data->is_kernel = true;
+        data->free_list = null;
+        data->heap_size = 0;
 
-    data->free_list->size = heap_size;
-    data->free_list->next = null;
+        kernel_data->is_kernel = true;
+        kernel_data->free_list = (block_t*)HEAP_START_KERNEL;
+        kernel_data->free_list->size = heap_size;
+        kernel_data->free_list->next = null;
+        kernel_data->heap_size = heap_size;
+    } else {
+        data->is_kernel = false;
+        data->free_list = (block_t*)HEAP_START;
+        data->free_list->size = heap_size;
+        data->free_list->next = null;
+        data->heap_size = heap_size;
+    }
 
+    kernel_heap_initialized = true;
     screen_print("[allocator] allocator heap init\n");
 
     return true;
 }
 
 void allocator_unmap_heap() {
-    for (uint64_t ptr = (uint64_t)data; ptr < (uint64_t)data + PAGE_SIZE + HEAP_SIZE; ptr += PAGE_SIZE) {
-        vmm_unmap_page(ptr);
+    if (!kernel_heap_initialized)
+        panic("Tried to unmap heap before kernel heap initialized");
+
+    if (data->is_kernel) {
+        panic("Tried to unmap kernel heap");
+        vmm_free((uint64_t)kernel_data, HEAP_START_KERNEL + kernel_data->heap_size - 1);
+    } else {
+        vmm_free((uint64_t)data, HEAP_START + data->heap_size - 1);
     }
 }
 
@@ -105,29 +142,39 @@ void* malloc_internal(block_t** free_list_ptr, size_t size) {
     return null; // out of memory
 }
 void* malloc(size_t size) {
-    return malloc_internal(data->free_list_ptr, size);
+    if (!kernel_heap_initialized)
+        panic("Tried to malloc before kernel heap initialized");
+
+    if (data->is_kernel) {
+        return malloc_internal(&kernel_data->free_list, size);
+    } else {
+        return malloc_internal(&data->free_list, size);
+    }
 }
 void* malloc_kernel(size_t size) {
-    return malloc_internal(kernel_free_list_ptr, size);
+    if (!kernel_heap_initialized)
+        panic("Tried to malloc before kernel heap initialized");
+
+    return malloc_internal(&kernel_data->free_list, size);
 }
 
-static bool_t are_pages_free(uint64_t start, uint64_t size, block_t* free_list) {
-    block_t* curr = free_list;
-    uint64_t start_page = (start / PAGE_SIZE) * PAGE_SIZE;
-    uint64_t end_page = ceil_div(start + size - 1, PAGE_SIZE) * PAGE_SIZE - 1;
-
-    while (curr) {
-        uint64_t blk_start = (uint64_t)curr + sizeof(block_t);
-        uint64_t blk_end   = (uint64_t)curr + curr->size - 1;
-        if (blk_start <= start_page
-            && blk_end >= end_page)
-            return true;
-
-        curr = curr->next;
-    }
-
-    return false;
-}
+// static bool_t are_pages_free(uint64_t start, uint64_t size, block_t* free_list) {
+//     block_t* curr = free_list;
+//     uint64_t start_page = (start / PAGE_SIZE) * PAGE_SIZE;
+//     uint64_t end_page = ceil_div(start + size - 1, PAGE_SIZE) * PAGE_SIZE - 1;
+//
+//     while (curr) {
+//         uint64_t blk_start = (uint64_t)curr + sizeof(block_t);
+//         uint64_t blk_end   = (uint64_t)curr + curr->size - 1;
+//         if (blk_start <= start_page
+//             && blk_end >= end_page)
+//             return true;
+//
+//         curr = curr->next;
+//     }
+//
+//     return false;
+// }
 
 void free_internal(block_t** free_list_ptr, void* ptr) {
     if (!ptr) return;
@@ -166,14 +213,30 @@ void free_internal(block_t** free_list_ptr, void* ptr) {
     //     vmm_free((uint64_t)ptr - sizeof(block_t), (uint64_t)ptr + original_blk_size);
 }
 void free(void* ptr) {
-    free_internal(data->free_list_ptr, ptr);
+    if (!kernel_heap_initialized)
+        panic("Tried to free before kernel heap initialized");
+
+    if (data->is_kernel) {
+        free_internal(&kernel_data->free_list, ptr);
+    } else {
+        free_internal(&data->free_list, ptr);
+    }
 }
 void free_kernel(void* ptr) {
-    free_internal(kernel_free_list_ptr, ptr);
+    if (!kernel_heap_initialized)
+        panic("Tried to free before kernel heap initialized");
+
+    free_internal(&kernel_data->free_list, ptr);
 }
 
 void allocator_print_status() {
+    if (!kernel_heap_initialized)
+        panic("Tried to print status before kernel heap initialized");
+
     block_t* curr = data->free_list;
+    if (data->is_kernel)
+        curr = kernel_data->free_list;
+
     char buffer[100] = {};
 
     screen_print("Memory Blocks {\n");

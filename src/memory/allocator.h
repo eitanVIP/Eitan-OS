@@ -10,7 +10,7 @@
 #define HEAP_SIZE 0x100000
 
 // inits heap. should call this per process.
-bool_t allocator_heap_init(uint64_t heap_start, uint64_t heap_size, bool_t is_kernel);
+bool_t allocator_heap_init(uint64_t heap_size, bool_t is_kernel);
 
 // unmaps the current process's heap.
 void allocator_unmap_heap();

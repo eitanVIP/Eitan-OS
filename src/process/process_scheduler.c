@@ -64,7 +64,7 @@ void process_scheduler_init(PML4Table* kernel_PML4) {
     // stack_list->next = null;
 
     screen_print("[process_scheduler] initializing heap for kernel:\n");
-    bool_t success = allocator_heap_init(HEAP_START_KERNEL, HEAP_SIZE, true);
+    bool_t success = allocator_heap_init(HEAP_SIZE, true);
 
     if (!success)
         panic("failed to initialize heap for kernel");

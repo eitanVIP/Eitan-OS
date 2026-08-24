@@ -258,7 +258,7 @@ bool_t program_loader_load_elf64(const uint8_t* file_data, uint32_t* pid) {
     screen_print("[program_loader] mapped stack for process\n");
 
     screen_print("[program_loader] initiating heap for process:\n");
-    allocator_heap_init(HEAP_START, HEAP_SIZE, false);
+    allocator_heap_init(HEAP_SIZE, false);
 
     vmm_set_PML4(process_scheduler_get_kernel_PML4());
     vmm_load_cpu();
