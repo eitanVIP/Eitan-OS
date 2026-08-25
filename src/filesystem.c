@@ -845,6 +845,8 @@ bool_t filesystem_move_file(const char* path, const char* new_path) {
     char* new_name;
     split_path(new_path, &new_dir_path, &new_name);
 
+    load_file_table();
+
     // Find file entry
     uint32_t file_entry_idx;
     if (!resolve_path(path, &file_entry_idx)) {

@@ -22,9 +22,10 @@ typedef enum {
     ROOT_DIRECTORY,
 } file_type_t;
 typedef struct {
+    size_t size;
     file_type_t type;
     char name[FILE_NAME_LENGTH];
-} dir_listing_t;
+} file_metadata_t;
 
 uint64_t syscall(uint64_t num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
     uint64_t ret;
@@ -101,22 +102,44 @@ bool_t is_character(uint16_t scancode) {
            (ascii == '\n');
 }
 
-bool_t read_file(const char* path, void** data_out, size_t* size_out) {
-    return syscall(40, (uint64_t)path, (uint64_t)data_out, (uint64_t)size_out);
+bool_t read_file(const char* path, void* data_out) {
+    return syscall(40, (uint64_t)path, (uint64_t)data_out, 0);
 }
 
-bool_t write_file(const char* path, void* data, size_t size) {
-    return syscall(41, (uint64_t)path, (uint64_t)data, size);
+bool_t read_file_metadata(const char* path, file_metadata_t* meta_out) {
+    return syscall(41, (uint64_t)path, (uint64_t)meta_out, 0);
 }
 
-dir_listing_t* list_dir(const char* path, size_t* file_count) {
-    dir_listing_t* files;
-    syscall(42, (uint64_t)path, (uint64_t)&files, (uint64_t)file_count);
-    return files;
+bool_t file_exists(const char* path) {
+    bool_t exists;
+    syscall(42, (uint64_t)path, (uint64_t)&exists, 0);
+    return exists;
+}
+
+bool_t write_file(const char* path, const void* data, size_t size) {
+    return syscall(43, (uint64_t)path, (uint64_t)data, size);
 }
 
 bool_t delete_file(const char* path) {
-    return syscall(43, (uint64_t)path, 0, 0);
+    return syscall(44, (uint64_t)path, 0, 0);
+}
+
+bool_t create_directory(const char* path) {
+    return syscall(45, (uint64_t)path, 0, 0);
+}
+
+bool_t delete_directory(const char* path) {
+    return syscall(46, (uint64_t)path, 0, 0);
+}
+
+bool_t move_file(const char* path, const char* new_path) {
+    return syscall(47, (uint64_t)path, (uint64_t)new_path, 0);
+}
+
+file_metadata_t* list_dir(const char* path, size_t* file_count) {
+    file_metadata_t* files;
+    syscall(48, (uint64_t)path, (uint64_t)&files, (uint64_t)file_count);
+    return files;
 }
 
 
@@ -448,24 +471,13 @@ char** str_split(const char* str, char delim, int* out_count) {
 
 
 
-enum command {
-    none,
-    ls,
-    echo,
-    clear,
-    cd,
-    touch,
-    cat,
-    write,
-    rm,
-    man,
-    find
-};
-
 char working_dir[128] = "/";
 int working_dir_len = 1;
 
 char* join_working_dir(char* path) {
+    if (path[0] == '/')
+        return strdup(path);
+
     char* strs[] = { working_dir, "/", path };
     return str_concats(strs, sizeof(strs) / sizeof(strs[0]));
 }
@@ -527,24 +539,32 @@ void parse_path(char* path) {
 }
 
 void cmd_ls(char** args, int args_size) {
-    if (args_size != 0) {
+    char* path;
+
+    if (args_size == 0) {
+        path = strdup(working_dir);
+        parse_path(path);
+    } else if (args_size == 1) {
+        path = join_working_dir(args[0]);
+        parse_path(path);
+    } else {
         print("Usage: ls\n");
         return;
     }
 
     size_t file_count;
-    dir_listing_t* files = list_dir(working_dir, &file_count);
+    file_metadata_t* files = list_dir(path, &file_count);
     if (files == null) {
         print("No files found\n");
+        free(path);
         return;
     }
 
     for (size_t i = 0; i < file_count; i++) {
-        char* msg = str_concat(files[i].name, "\n");
-        print(msg);
-        free(msg);
+        print(files[i].name); print("\n");
     }
 
+    free(path);
     free(files);
 }
 
@@ -560,6 +580,15 @@ void cmd_echo(char** args, int args_size) {
     msg[msg_len + 1] = '\0';
     print(msg);
     free(msg);
+}
+
+void cmd_clear(char** args, int args_size) {
+    if (args_size != 0) {
+        print("Usage: clear\n");
+        return;
+    }
+
+    clear_screen();
 }
 
 void cmd_cd(char** args, int args_size) {
@@ -601,16 +630,24 @@ void cmd_cat(char** args, int args_size) {
     char* path = join_working_dir(args[0]);
     parse_path(path);
 
-    char* data;
-    size_t data_size;
-    if (read_file(path, &data, &data_size)) {
-        print(data);
-        print("\n");
-        free(data);
-    } else {
+    file_metadata_t metadata;
+    if (!read_file_metadata(path, &metadata)) {
         print("Error: File doesn't exist\n");
+        free(path);
+        return;
     }
+
+    char* data = malloc(metadata.size);
+    if (!read_file(path, data)) {
+        print("Error: Failed to read file\n");
+        free(path);
+        return;
+    }
+
+    print(data); print("\n");
+
     free(path);
+    free(data);
 }
 
 void cmd_write(char** args, int args_size) {
@@ -622,12 +659,12 @@ void cmd_write(char** args, int args_size) {
     char* path = join_working_dir(args[0]);
     parse_path(path);
 
-    char* file_data = 0;
-    size_t file_data_size;
-    bool_t file_exists = read_file(path, &file_data, &file_data_size);
-    if (file_exists) {
-        write_file(path, args[1], strlen(args[1]) + 1);
-        free(file_data);
+    if (file_exists(path)) {
+        if (write_file(path, args[1], strlen(args[1]) + 1)) {
+            print("Wrote data to: "); print(path); print("\n");
+        } else {
+            print("Error: Failed to write to file\n");
+        }
     } else {
         print("Error: File doesn't exist\n");
     }
@@ -644,9 +681,7 @@ void cmd_rm(char** args, int args_size) {
     parse_path(path);
 
     if (delete_file(path)) {
-        print("Deleted: ");
-        print(path);
-        print("\n");
+        print("Deleted: "); print(path); print("\n");
     } else {
         print("Error: File doesn't exist\n");
     }
@@ -659,24 +694,28 @@ void cmd_man(char** args, int args_size) {
         return;
     }
     if (args_size == 0) {
-        print("List of commands:\nls echo cd touch cat write rm man find\n");
+        print("List of commands:\nls echo cd touch cat write rm man find mkdir rmdir mv stat\n");
     } else {
         if (strcmp(args[0], "ls")) print("ls - prints all files and folders inside of working dir\nUsage: ls\n");
         else if (strcmp(args[0], "echo")) print("echo - prints the provided text to the screen\nUsage: echo <string>\n");
         else if (strcmp(args[0], "cd")) print("cd - changes the current working directory\nUsage: cd <path>\n");
         else if (strcmp(args[0], "touch")) print("touch - creates a new empty file\nUsage: touch <filename>\n");
         else if (strcmp(args[0], "cat")) print("cat - displays the contents of a file\nUsage: cat <filename>\n");
-        else if (strcmp(args[0], "write")) print("write - overwrites a file with provided text\nUsage: write <filename> <data>\n");
-        else if (strcmp(args[0], "rm")) print("rm - removes a file from the system\nUsage: rm <filename>\n");
+        else if (strcmp(args[0], "write")) print("write - overwrites a file with provided text\nUsage: write <path> <data>\n");
+        else if (strcmp(args[0], "rm")) print("rm - removes a file from the system\nUsage: rm <path>\n");
         else if (strcmp(args[0], "man")) print("man - displays manual pages for commands\nUsage: man or man <command>\n");
         else if (strcmp(args[0], "find")) print("find - prints all nested files and folders in working dir\nUsage: find or find <path>\n");
+        else if (strcmp(args[0], "mkdir")) print("mkdir - creates a new directory\nUsage: mkdir <path>\n");
+        else if (strcmp(args[0], "rmdir")) print("rmdir - removes an empty directory\nUsage: rmdir <path>\n");
+        else if (strcmp(args[0], "mv")) print("mv - moves or renames a file\nUsage: mv <src> <dst>\n");
+        else if (strcmp(args[0], "stat")) print("stat - displays metadata about a file\nUsage: stat <path>\n");
         else print("Error: Command not found in manual.\n");
     }
 }
 
 void recursive_find(const char* path, int recursion_level) {
     size_t file_count;
-    dir_listing_t* files = list_dir(path, &file_count);
+    file_metadata_t* files = list_dir(path, &file_count);
     if (files == null)
         return;
 
@@ -687,7 +726,7 @@ void recursive_find(const char* path, int recursion_level) {
         print(files[i].name); print("\n"); // Print file name
 
         if (files[i].type == DIRECTORY) { // If the file is a dir, continue recursively
-            char* strs[] = { path, "/", files[i].name };
+            const char* strs[] = { path, "/", files[i].name };
             char* child_path = str_concats(strs, sizeof(strs) / sizeof(strs[0]));
             parse_path(child_path);
 
@@ -713,51 +752,131 @@ void cmd_find(char** args, int args_size) {
     }
 }
 
+void cmd_mkdir(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: mkdir <path>\n");
+        return;
+    }
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
+    if (create_directory(path)) {
+        print("Create directory: "); print(path); print("\n");
+    } else {
+        print("mkdir: Failed to create directory\n");
+    }
+    free(path);
+}
+
+void cmd_rmdir(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: rmdir <path>\n");
+        return;
+    }
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
+    if (delete_directory(path)) {
+        print("Removed directory: "); print(path); print("\n");
+    } else {
+        print("rmdir: Failed to remove directory\n");
+    }
+    free(path);
+}
+
+void cmd_mv(char** args, int args_size) {
+    if (args_size != 2) {
+        print("Usage: mv <src> <dst>\n");
+        return;
+    }
+    char* src = join_working_dir(args[0]);
+    char* dst = join_working_dir(args[1]);
+    parse_path(src);
+    parse_path(dst);
+
+    if (move_file(src, dst)) {
+        print("Moved file from: "); print(src); print(" to: "); print(dst); print("\n");
+    } else {
+        print("mv: Failed to move file\n");
+    }
+    free(src);
+    free(dst);
+}
+
+void cmd_stat(char** args, int args_size) {
+    if (args_size != 1) {
+        print("Usage: stat <path>\n");
+        return;
+    }
+    char* path = join_working_dir(args[0]);
+    parse_path(path);
+
+    file_metadata_t meta;
+    if (!read_file_metadata(path, &meta)) {
+        print("stat: No such file or directory\n");
+        free(path);
+        return;
+    }
+
+    print("  File: ");
+    print(path);
+    print("\n");
+    print("  Size: ");
+    char* size_str = num_to_str(meta.size);
+    print(size_str);
+    print(" bytes\n");
+    print("  Type: ");
+    print(meta.type == DIRECTORY ? "directory\n" : "file\n");
+
+    free(size_str);
+    free(path);
+}
+
+enum command {
+    none,
+    ls,
+    echo,
+    clear,
+    cd,
+    touch,
+    cat,
+    write,
+    rm,
+    man,
+    find,
+    mkdir,
+    rmdir,
+    mv,
+    stat
+};
+void (*commands[])(char**, int) = {
+    null,
+    cmd_ls,
+    cmd_echo,
+    cmd_clear,
+    cmd_cd,
+    cmd_touch,
+    cmd_cat,
+    cmd_write,
+    cmd_rm,
+    cmd_man,
+    cmd_find,
+    cmd_mkdir,
+    cmd_rmdir,
+    cmd_mv,
+    cmd_stat
+};
+
 void execute_command_line(enum command command, char** args, int args_size) {
-    switch (command) {
-        case ls:
-            cmd_ls(args, args_size);
-            break;
-
-        case echo:
-            cmd_echo(args, args_size);
-            break;
-
-        case clear:
-            clear_screen();
-            break;
-
-        case cd:
-            cmd_cd(args, args_size);
-            break;
-
-        case touch:
-            cmd_touch(args, args_size);
-            break;
-
-        case cat:
-            cmd_cat(args, args_size);
-            break;
-
-        case write:
-            cmd_write(args, args_size);
-            break;
-
-        case rm:
-            cmd_rm(args, args_size);
-            break;
-
-        case man:
-            cmd_man(args, args_size);
-            break;
-
-        case find:
-            cmd_find(args, args_size);
-            break;
-
-        default:
-            print("Error: Command not found\n");
-            break;
+    if (command < none || command > stat) {
+        print("Error: Command not found\n");
+        return;
+    }
+    void (*c)(char**, int) = commands[command];
+    if (c != null) {
+        c(args, args_size);
+    } else {
+        print("Error: Command not found\n");
     }
 }
 
@@ -793,6 +912,14 @@ bool_t parse_command_line(const char* command_line, enum command* command_out, c
         *command_out = man;
     } else if (strncmp(command_line, "find", command_size)) {
         *command_out = find;
+    } else if (strncmp(command_line, "mkdir", command_size)) {
+        *command_out = mkdir;
+    } else if (strncmp(command_line, "rmdir", command_size)) {
+        *command_out = rmdir;
+    } else if (strncmp(command_line, "mv", command_size)) {
+        *command_out = mv;
+    } else if (strncmp(command_line, "stat", command_size)) {
+        *command_out = stat;
     } else {
         *command_out = none;
     }
